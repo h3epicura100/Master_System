@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pms-bg: #F8FAFC;
+  --pms-surface: #FFFFFF;
+  --pms-border: #E2E8F0;
+  --pms-text: #0F172A;
+  --pms-muted: #64748B;
+  --pms-primary: #1E40AF;
+  --pms-primary-hover: #1E3A8A;
+  --pms-accent: #3B82F6;
+  --pms-accent-hover: #2563EB;
+  --pms-accent-light: #DBEAFE;
+  --pms-success: #059669;
+  --pms-success-bg: #D1FAE5;
+  --pms-warning: #D97706;
+  --pms-warning-bg: #FEF3C7;
+  --pms-danger: #DC2626;
+  --pms-danger-bg: #FEE2E2;
+}
+
+/* Custom scrollbar for tables and sidebar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+

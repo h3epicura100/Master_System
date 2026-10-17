@@ -1,0 +1,2699 @@
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  Search,
+  Loader2,
+  Database,
+  Settings2,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  X,
+  Calendar,
+  Zap,
+  CheckCircle2,
+  Trash2,
+  ArrowLeft,
+  ArrowLeftRight,
+  ClipboardList,
+  UploadCloud,
+  FileText,
+  Pencil
+} from 'lucide-react';
+import AdminLayout from '../components/layout/AdminLayout';
+import PartyCard from '../components/layout/PartyCard';
+import Pagination from '../components/Pagination';
+import SearchableSelect from '../components/SearchableSelect';
+import { formatDate, toInputDate, parseRowDate, parseNumber, formatIndianAmount, cleanText, normalizeForMatch } from '../utils/helpers';
+import { supabase } from '../utils/supabaseClient';
+import { uploadImage } from '../utils/supabaseStorage';
+import { loadImageAsBase64, loadImagesBatched } from '../utils/imageBase64';
+import { TABLES, COLUMNS, ENUMS, DROPDOWN_CATEGORY, STORAGE_FOLDERS, withItemMaster } from '../utils/dbSchema';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+const PAGE_SIZE = 50;
+
+export const isConsumableType = (type) => {
+  if (!type) return false;
+  const t = type.toLowerCase();
+  return t.includes('grocery') || t.includes('kirana') || t.includes('beverage') || t.includes('spices') || t.includes('dairy') || t.includes('produce');
+};
+
+const Inventory = () => {
+  const [activeTab, setActiveTab] = useState('issued'); // 'issued' or 'return'
+  const [isTableLoading, setIsTableLoading] = useState(true);
+  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [isColMenuOpen, setIsColMenuOpen] = useState(false);
+  const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [toast, setToast] = useState({ show: false, message: '', type: '' });
+  const [isReportGenerating, setIsReportGenerating] = useState(false);
+  const [showFullTotal, setShowFullTotal] = useState(false);
+
+  // Data State
+  const [items, setItems] = useState([]); // item_master catalog
+  const [itemStockMap, setItemStockMap] = useState({}); // item_id -> inventory_current row
+  const [itemPurchasePriceMap, setItemPurchasePriceMap] = useState({}); // item_id -> latest purchase price
+  const [issueHistory, setIssueHistory] = useState([]);
+  const [returnHistory, setReturnHistory] = useState([]);
+  const [dropdownOptions, setDropdownOptions] = useState({
+    issuerOptions: [],
+    eventTimeOptions: []
+  });
+  const [showIssuerDropdown, setShowIssuerDropdown] = useState(false);
+  const issuerDropdownRef = useRef(null);
+  const [showReturnInvTypeDropdown, setShowReturnInvTypeDropdown] = useState(false);
+  const returnInvTypeDropdownRef = useRef(null);
+  const [showReturnItemDropdown, setShowReturnItemDropdown] = useState(false);
+  const returnItemDropdownRef = useRef(null);
+  const [showPartyDropdown, setShowPartyDropdown] = useState(false);
+  const partyDropdownRef = useRef(null);
+  const [showReturnPartyDropdown, setShowReturnPartyDropdown] = useState(false);
+  const returnPartyDropdownRef = useRef(null);
+  const [lastReturnInfo, setLastReturnInfo] = useState({ date: '-', qty: '-' });
+  const [filteredItems, setFilteredItems] = useState([]);
+
+  // Filter States - Issued History
+  const [issuedFilterItem, setIssuedFilterItem] = useState("");
+  const [issuedFilterType, setIssuedFilterType] = useState("");
+  const [issuedFilterParty, setIssuedFilterParty] = useState("");
+  const [issuedStartDate, setIssuedStartDate] = useState("");
+  const [issuedEndDate, setIssuedEndDate] = useState("");
+
+  // Filter States - Return History
+  const [returnFilterItem, setReturnFilterItem] = useState("");
+  const [returnFilterType, setReturnFilterType] = useState("");
+  const [returnFilterParty, setReturnFilterParty] = useState("");
+  const [returnStartDate, setReturnStartDate] = useState("");
+  const [returnEndDate, setReturnEndDate] = useState("");
+
+  // Pagination States
+  const [issuePage, setIssuePage] = useState(1);
+  const [returnPage, setReturnPage] = useState(1);
+  const [partyGroupPage, setPartyGroupPage] = useState(1);
+  const [partyDetailPage, setPartyDetailPage] = useState(1);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingReturnId, setEditingReturnId] = useState(null);
+  const [editingIssueId, setEditingIssueId] = useState(null);
+
+  // Edit State
+  const [editDataMap, setEditDataMap] = useState({}); // { [id]: rowObject }
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectedPartyCard, setSelectedPartyCard] = useState(null);
+  const [generatingReportParty, setGeneratingReportParty] = useState(null);
+
+  const uniquePartyOptions = useMemo(() => {
+    return [...new Set(issueHistory.map(row => row.partyName).filter(Boolean))].sort();
+  }, [issueHistory]);
+
+  const handleSelectParty = (selectedParty) => {
+    const latestRecord = issueHistory.find(row => row.partyName === selectedParty);
+    if (latestRecord) {
+      setIssueForm(p => ({
+        ...p,
+        partyName: selectedParty,
+        eventDate: toInputDate(latestRecord.eventDate),
+        foodName: latestRecord.venueName || '',
+        eventTime: latestRecord.eventType || ''
+      }));
+    } else {
+      setIssueForm(p => ({ ...p, partyName: selectedParty }));
+    }
+    setShowPartyDropdown(false);
+  };
+
+  // Form States
+  const [issueForm, setIssueForm] = useState({
+    forType: 'H3', issuer: '', itemId: '', inventoryType: '', department: '', itemsName: '', openingBalance: '', perUnit: '', unit: '', eventDate: '', partyName: '', eventTime: '', foodName: '', issueData: '', dishes: '', remarks: '', imageUrl: ''
+  });
+  // NOTE: `unit` here is a legacy name carried over from the original app —
+  // in the Issue form it actually holds the Damage/Missing Rate value (maps
+  // to issues.damage_rate on submit), not a unit of measure.
+
+  const [returnForm, setReturnForm] = useState({
+    itemId: '', inventoryType: '', department: '', itemsName: '', openingBalance: '', damageRate: '0', rentingRate: '0', totalCost: '0', partyName: '', eventDate: '', returnData: '0', returnDate: new Date().toISOString().split('T')[0], issueQty: '0', remainingQty: '0', consumedQty: '0', damageItems: '0', missingItems: '0', closingBalance: '', remarks: '', imageUrl: '', forType: ''
+  });
+
+  // Cascading return dropdown options driven by issueHistory and returnHistory
+  const returnInvTypeOptions = useMemo(() => {
+    if (!returnForm.partyName) {
+      // No party selected: show all types from items master
+      return [...new Set(items.map(i => i.inventory_type).filter(Boolean))].sort();
+    }
+    const partyNorm = normalizeForMatch(returnForm.partyName);
+    const typesIssued = [...new Set(
+      issueHistory
+        .filter(r => normalizeForMatch(r.partyName) === partyNorm)
+        .map(r => r.inventoryType)
+        .filter(Boolean)
+    )];
+
+    // Filter to inventory types that have at least one item with pending return qty
+    const typesWithPendingItems = typesIssued.filter(invType => {
+      const typeNorm = normalizeForMatch(invType);
+      const itemsForType = [...new Set(
+        issueHistory
+          .filter(r => normalizeForMatch(r.partyName) === partyNorm && normalizeForMatch(r.inventoryType) === typeNorm)
+          .map(r => r.itemName)
+          .filter(Boolean)
+      )];
+
+      return itemsForType.some(itemName => {
+        const itemNorm = normalizeForMatch(itemName);
+        const totalIssued = issueHistory
+          .filter(r => 
+            normalizeForMatch(r.partyName) === partyNorm && 
+            normalizeForMatch(r.itemName) === itemNorm &&
+            (!r.inventoryType || normalizeForMatch(r.inventoryType) === typeNorm)
+          )
+          .reduce((sum, r) => sum + (parseNumber(r.qty) || 0), 0);
+
+        const totalReturned = returnHistory
+          .filter(r => 
+            normalizeForMatch(r.partyName) === partyNorm && 
+            normalizeForMatch(r.itemName) === itemNorm &&
+            (!r.inventoryType || normalizeForMatch(r.inventoryType) === typeNorm)
+          )
+          .reduce((sum, r) => {
+            const retQty = parseNumber(r.qty);
+            const dmgQty = parseNumber(r.damage);
+            const misQty = parseNumber(r.missing);
+            const issQty = parseNumber(r.issueQty);
+            return sum + Math.max(retQty + dmgQty + misQty, issQty, retQty);
+          }, 0);
+
+        return totalIssued > totalReturned;
+      });
+    });
+
+    return (typesWithPendingItems.length > 0 ? typesWithPendingItems : typesIssued).sort();
+  }, [items, issueHistory, returnHistory, returnForm.partyName]);
+
+  const returnItemOptions = useMemo(() => {
+    if (!returnForm.inventoryType) return [];
+    const typeNorm = normalizeForMatch(returnForm.inventoryType);
+    if (!returnForm.partyName) {
+      // No party: fall back to all items of that type
+      return [...new Set(
+        items.filter(i => normalizeForMatch(i.inventory_type) === typeNorm && i.item_name).map(i => i.item_name)
+      )].sort();
+    }
+    const partyNorm = normalizeForMatch(returnForm.partyName);
+    const candidateItems = [...new Set(
+      issueHistory
+        .filter(r => normalizeForMatch(r.partyName) === partyNorm && normalizeForMatch(r.inventoryType) === typeNorm)
+        .map(r => r.itemName)
+        .filter(Boolean)
+    )];
+
+    return candidateItems.filter(itemName => {
+      const itemNorm = normalizeForMatch(itemName);
+
+      const totalIssued = issueHistory
+        .filter(r => 
+          normalizeForMatch(r.partyName) === partyNorm && 
+          normalizeForMatch(r.itemName) === itemNorm &&
+          (!r.inventoryType || normalizeForMatch(r.inventoryType) === typeNorm)
+        )
+        .reduce((sum, r) => sum + (parseNumber(r.qty) || 0), 0);
+
+      const totalReturned = returnHistory
+        .filter(r => 
+          normalizeForMatch(r.partyName) === partyNorm && 
+          normalizeForMatch(r.itemName) === itemNorm &&
+          (!r.inventoryType || normalizeForMatch(r.inventoryType) === typeNorm)
+        )
+        .reduce((sum, r) => {
+          const retQty = parseNumber(r.qty);
+          const dmgQty = parseNumber(r.damage);
+          const misQty = parseNumber(r.missing);
+          const issQty = parseNumber(r.issueQty);
+          return sum + Math.max(retQty + dmgQty + misQty, issQty, retQty);
+        }, 0);
+
+      return totalIssued > totalReturned;
+    }).sort();
+  }, [items, issueHistory, returnHistory, returnForm.partyName, returnForm.inventoryType]);
+
+  const [matchingIssuedRows, setMatchingIssuedRows] = useState([]);
+
+  // Column Visibility & Config — keys map directly to fields on the mapped
+  // issue/return row objects (see fetchHistory below), not sheet indices.
+  const [visibleColumns, setVisibleColumns] = useState({
+    date: true,
+    serial: true,
+    type: true,
+    item: true,
+    qty: true,
+    party: true,
+    eventDate: true,
+    eventType: true,
+    estimatedCost: true,
+    returnDate: true,
+    damage: true,
+    missing: true,
+    issueQty: true,
+    notReturned: true,
+    totalCost: true,
+    image: true,
+    for: true,
+    dishes: true
+  });
+
+  const columnConfig = activeTab === 'issued' ? [
+    { key: 'serial', label: 'Serial' },
+    { key: 'type', label: 'Type' },
+    { key: 'item', label: 'Item Name' },
+    { key: 'qty', label: 'Issue Qty' },
+    { key: 'image', label: 'Image' },
+    { key: 'date', label: 'Entry Date' },
+    { key: 'for', label: 'For' },
+    { key: 'party', label: 'Party Name' },
+    { key: 'eventDate', label: 'Event Date' },
+    { key: 'eventType', label: 'Event Type' },
+    { key: 'estimatedCost', label: 'Estimated Cost' },
+    { key: 'dishes', label: 'Dishes' },
+    { key: 'actions', label: 'Actions' }
+  ] : [
+    { key: 'serial', label: 'Serial' },
+    { key: 'type', label: 'Type' },
+    { key: 'item', label: 'Item Name' },
+    { key: 'issueQty', label: 'Issue Qty' },
+    { key: 'qty', label: 'Return / Remaining' },
+    { key: 'image', label: 'Image' },
+    { key: 'date', label: 'Entry Date' },
+    { key: 'for', label: 'For' },
+    { key: 'party', label: 'Party Name' },
+    { key: 'returnDate', label: 'Return Date' },
+    { key: 'damage', label: 'Damage' },
+    { key: 'missing', label: 'Missing' },
+    { key: 'notReturned', label: 'Not Returned / Consumed' },
+    { key: 'totalCost', label: 'Total Cost' },
+    { key: 'actions', label: 'Actions' }
+  ];
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (issuerDropdownRef.current && !issuerDropdownRef.current.contains(event.target)) {
+        setShowIssuerDropdown(false);
+      }
+      if (partyDropdownRef.current && !partyDropdownRef.current.contains(event.target)) {
+        setShowPartyDropdown(false);
+      }
+      if (returnPartyDropdownRef.current && !returnPartyDropdownRef.current.contains(event.target)) {
+        setShowReturnPartyDropdown(false);
+      }
+      if (returnInvTypeDropdownRef.current && !returnInvTypeDropdownRef.current.contains(event.target)) {
+        setShowReturnInvTypeDropdown(false);
+      }
+      if (returnItemDropdownRef.current && !returnItemDropdownRef.current.contains(event.target)) {
+        setShowReturnItemDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const getDisplayableImageUrl = (url) => {
+    if (!url || url === 'No Image') return null;
+    try {
+      // Legacy Drive-hosted images render better as a thumbnail transform;
+      // Supabase Storage URLs (current uploads) are used as-is.
+      const match = url.match(/(?:[?&]id=|\/d\/)([a-zA-Z0-9\-_]{10,})/);
+      if (match && match[1]) return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w200`;
+      return url;
+    } catch { return url; }
+  };
+
+  const toggleRowSelection = (row) => {
+    const id = row.id;
+    const newSelected = new Set(selectedIds);
+    const newEditMap = { ...editDataMap };
+
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+      delete newEditMap[id];
+    } else {
+      newSelected.add(id);
+      newEditMap[id] = { ...row };
+    }
+    setSelectedIds(newSelected);
+    setEditDataMap(newEditMap);
+  };
+
+  const handleSelectAll = (filteredRows) => {
+    if (selectedIds.size === filteredRows.length && filteredRows.length > 0) {
+      setSelectedIds(new Set());
+      setEditDataMap({});
+    } else {
+      const newSelected = new Set();
+      const newEditMap = {};
+      filteredRows.forEach(row => {
+        newSelected.add(row.id);
+        newEditMap[row.id] = { ...row };
+      });
+      setSelectedIds(newSelected);
+      setEditDataMap(newEditMap);
+    }
+  };
+
+  const handleInlineEdit = (id, field, value) => {
+    setEditDataMap(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+  };
+
+  const changedRowsCount = useMemo(() => {
+    const currentRows = activeTab === 'issued' ? issueHistory : returnHistory;
+    const editableFields = activeTab === 'issued' ? ['qty'] : ['qty', 'damage', 'missing'];
+    return Object.keys(editDataMap).filter(id => {
+      const editRow = editDataMap[id];
+      const originalRow = currentRows.find(r => r.id === id);
+      if (!originalRow) return false;
+      return editableFields.some(f => String(editRow[f] ?? '') !== String(originalRow[f] ?? ''));
+    }).length;
+  }, [editDataMap, issueHistory, returnHistory, activeTab]);
+
+  const handleBatchSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const table = activeTab === 'issued' ? TABLES.ISSUES : TABLES.RETURNS;
+      const results = await Promise.all(Object.entries(editDataMap).map(([id, row]) => {
+        let payload;
+        if (activeTab === 'issued') {
+          payload = { issue_qty: parseFloat(row.qty) || 0 };
+        } else {
+          const isCons = isConsumableType(row.inventoryType);
+          const retQty = parseFloat(row.qty) || 0;
+          const dmgQty = isCons ? 0 : (parseFloat(row.damage) || 0);
+          const misQty = isCons ? 0 : (parseFloat(row.missing) || 0);
+          const consQty = isCons ? Math.max(0, (parseFloat(row.issueQty) || 0) - retQty) : 0;
+          payload = {
+            return_qty: retQty,
+            damage_qty: dmgQty,
+            missing_qty: misQty,
+            consumed_qty: consQty
+          };
+        }
+        return supabase.from(table).update(payload).eq(COLUMNS.ISSUES.ID, id);
+      }));
+      const failed = results.filter(r => r.error);
+      if (failed.length > 0) throw new Error(failed[0].error.message);
+
+      showToast(`${results.length} record(s) updated successfully`);
+      setEditDataMap({});
+      setSelectedIds(new Set());
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      fetchHistory();
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.size} selected record(s)?`)) return;
+
+    setIsSubmitting(true);
+    let successCount = 0;
+    let failCount = 0;
+    const table = activeTab === 'issued' ? TABLES.ISSUES : TABLES.RETURNS;
+
+    try {
+      for (const id of selectedIds) {
+        const { error } = await supabase.from(table).delete().eq(COLUMNS.ISSUES.ID, id);
+        if (error) failCount++; else successCount++;
+      }
+
+      if (successCount > 0) showToast(`Successfully deleted ${successCount} record(s)`);
+      if (failCount > 0) showToast(`Failed to delete ${failCount} record(s)`, 'error');
+
+      setSelectedIds(new Set());
+      setEditDataMap({});
+      fetchHistory();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: '' }), 3000);
+  };
+
+  const fetchAllFromTable = async (table, selectQuery, orderCol = null, orderAsc = true) => {
+    let all = [];
+    const pageSize = 1000;
+    for (let page = 0; ; page++) {
+      let q = supabase.from(table).select(selectQuery);
+      if (orderCol) q = q.order(orderCol, { ascending: orderAsc });
+      q = q.range(page * pageSize, page * pageSize + pageSize - 1);
+      
+      const { data, error } = await q;
+      if (error) throw error;
+      all = all.concat(data || []);
+      if (!data || data.length < pageSize) break;
+    }
+    return all;
+  };
+
+  const fetchInitialData = async () => {
+    try {
+      const [allItems, dropdownRes] = await Promise.all([
+        fetchAllFromTable(TABLES.ITEM_MASTER, '*', COLUMNS.ITEM_MASTER.ITEM_NAME, true),
+        supabase.from(TABLES.DROPDOWN_OPTIONS).select('*')
+      ]);
+      setItems(allItems || []);
+
+      if (!dropdownRes.error) {
+        const rows = dropdownRes.data || [];
+        setDropdownOptions({
+          issuerOptions: rows.filter(r => r.category === DROPDOWN_CATEGORY.ISSUER).map(r => r.value).sort(),
+          eventTimeOptions: rows.filter(r => r.category === DROPDOWN_CATEGORY.EVENT_TYPE).map(r => r.value).sort()
+        });
+      }
+
+      try {
+        const [stockRows, purchaseRows] = await Promise.all([
+          fetchAllFromTable(
+            TABLES.INVENTORY_CURRENT,
+            `${COLUMNS.INVENTORY_CURRENT.ITEM_ID}, ${COLUMNS.INVENTORY_CURRENT.CURRENT_STOCK}, ${COLUMNS.INVENTORY_CURRENT.IMAGE_URL}`
+          ),
+          fetchAllFromTable(
+            TABLES.STOCK_TRANSACTIONS,
+            `${COLUMNS.STOCK_TRANSACTIONS.ITEM_ID}, ${COLUMNS.STOCK_TRANSACTIONS.PER_UNIT}, ${COLUMNS.STOCK_TRANSACTIONS.CREATED_AT}`,
+            COLUMNS.STOCK_TRANSACTIONS.CREATED_AT,
+            false
+          )
+        ]);
+        const map = {};
+        (stockRows || []).forEach(r => { map[r.item_id] = r; });
+        setItemStockMap(map);
+
+        const priceMap = {};
+        (purchaseRows || []).forEach(r => {
+          if (r.item_id && priceMap[r.item_id] === undefined && r.per_unit != null && Number(r.per_unit) > 0) {
+            priceMap[r.item_id] = Number(r.per_unit);
+          }
+        });
+        setItemPurchasePriceMap(priceMap);
+      } catch {
+        // Fallback for stock map
+      }
+    } catch {
+      showToast('Failed to load initial data', 'error');
+    }
+  };
+
+  const fetchHistory = async () => {
+    setIsTableLoading(true);
+    try {
+      const [allIssues, allReturns] = await Promise.all([
+        fetchAllFromTable(TABLES.ISSUES, `*, ${withItemMaster('item_name, inventory_type, department')}`, COLUMNS.ISSUES.CREATED_AT, false),
+        fetchAllFromTable(TABLES.RETURNS, `*, ${withItemMaster('item_name, inventory_type, department')}`, COLUMNS.RETURNS.CREATED_AT, false)
+      ]);
+
+      setIssueHistory((allIssues || []).map(row => ({
+        id: row.id,
+        serial: row.serial_no,
+        itemId: row.item_id,
+        inventoryType: row.item_master?.inventory_type,
+        department: row.item_master?.department,
+        itemName: row.item_master?.item_name,
+        partyName: row.party_name,
+        eventDate: row.event_date,
+        qty: row.issue_qty,
+        damageRate: row.damage_rate,
+        rentingRate: row.renting_rate,
+        openingBalance: row.opening_balance,
+        closingBalance: row.closing_balance,
+        venueName: row.venue_name,
+        imageUrl: row.image_url,
+        remarks: row.remarks,
+        eventType: row.event_type,
+        estimatedCost: row.estimated_cost != null ? row.estimated_cost : (row.for_type === 'H3' ? 0 : (Number(row.issue_qty || 0) * Number(row.renting_rate || 0))),
+        forType: row.for_type,
+        issuer: row.issuer,
+        dishes: row.dishes,
+        createdAt: row.created_at
+      })));
+
+      setReturnHistory((allReturns || []).map(row => {
+        const isCons = isConsumableType(row.item_master?.inventory_type);
+        const consQty = Number(row.consumed_qty || 0);
+        const dmgQty = Number(row.damage_qty || 0);
+        const misQty = Number(row.missing_qty || 0);
+        const dmgRate = Number(row.damage_rate || 0);
+        const rentRate = Number(row.renting_rate || 0);
+        const calculatedCost = isCons
+          ? (consQty * rentRate)
+          : ((dmgQty + misQty) * dmgRate);
+
+        return {
+          id: row.id,
+          serial: row.serial_no,
+          itemId: row.item_id,
+          inventoryType: row.item_master?.inventory_type,
+          department: row.item_master?.department,
+          itemName: row.item_master?.item_name,
+          partyName: row.party_name,
+          eventDate: row.event_date,
+          returnDate: row.return_date,
+          issueQty: row.issue_qty,
+          qty: row.return_qty,
+          damage: row.damage_qty,
+          missing: row.missing_qty,
+          consumed: row.consumed_qty != null ? row.consumed_qty : (isCons ? Math.max(0, Number(row.issue_qty || 0) - Number(row.return_qty || 0)) : 0),
+          notReturned: isCons ? (row.consumed_qty != null ? row.consumed_qty : Math.max(0, Number(row.issue_qty || 0) - Number(row.return_qty || 0))) : (dmgQty + misQty),
+          damageRate: row.damage_rate,
+          rentingRate: row.renting_rate,
+          openingBalance: row.opening_balance,
+          closingBalance: row.closing_balance,
+          totalBalance: row.total_balance,
+          imageUrl: row.image_url,
+          remarks: row.remarks,
+          totalCost: row.total_cost != null ? row.total_cost : calculatedCost,
+          forType: row.for_type,
+          createdAt: row.created_at
+        };
+      }));
+    } catch {
+      showToast('Failed to fetch history', 'error');
+    } finally {
+      setIsTableLoading(false);
+    }
+  };
+
+  const handleGeneratePartyReport = (partyName, rows) => {
+    const reportColumns = [
+      { header: 'S.No.', dataKey: 'sNo' },
+      { header: 'Item Name', dataKey: 'item' },
+      { header: 'Qty', dataKey: 'qty' },
+      { header: 'Image', dataKey: 'image' },
+      { header: 'Dishes', dataKey: 'dishes' },
+      { header: 'Remarks', dataKey: 'remark' }
+    ];
+
+    setGeneratingReportParty(partyName);
+    setIsReportGenerating(true);
+
+    setTimeout(async () => {
+      try {
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = doc.internal.pageSize.width;
+        const marginOffset = 12;
+        const availableWidth = pageWidth - marginOffset;
+        const colStyles = {
+          sNo: { cellWidth: 15 },
+          item: { cellWidth: 50 },
+          qty: { cellWidth: 15 },
+          image: { cellWidth: 25 },
+          dishes: { cellWidth: 43 },
+          remark: { cellWidth: availableWidth - (15 + 50 + 15 + 25 + 43) }
+        };
+
+        const getItemImage = (row) => {
+          if (row.imageUrl && row.imageUrl !== 'No Image') return row.imageUrl;
+          const match = items.find(i => i.id === row.itemId || i.item_name === row.itemName);
+          return match?.image_url && match.image_url !== 'No Image' ? match.image_url : null;
+        };
+
+        const rawUrls = rows.map(row => getItemImage(row)).filter(Boolean);
+        const displayUrls = rawUrls.map(u => getDisplayableImageUrl(u));
+        const imageMap = await loadImagesBatched(displayUrls, 12);
+
+        const body = rows.map((row, index) => {
+          const itemImg = getItemImage(row);
+          return {
+            sNo: index + 1,
+            item: row.itemName || '-',
+            qty: row.qty || '0',
+            image: itemImg || '',
+            dishes: row.dishes || '-',
+            remark: ''
+          };
+        });
+
+        doc.setFontSize(16);
+        doc.setTextColor(109, 40, 217);
+        doc.setFont(undefined, 'bold');
+        doc.text("ISSUED HISTORY REPORT", 14, 12);
+
+        const titleWidth = doc.getTextWidth("ISSUED HISTORY REPORT ");
+        doc.setFontSize(12);
+        doc.setTextColor(150, 150, 150);
+        doc.setFont(undefined, 'normal');
+        doc.text(`(${rows.length})`, 14 + titleWidth, 12);
+
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        const formattedGenDate = new Date().toLocaleString('en-IN', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        doc.text(`Generated on: ${formattedGenDate}`, pageWidth - 14, 12, { align: 'right' });
+
+        const drawLabelValue = (label, value, x, y) => {
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(50, 50, 50);
+          doc.text(label, x, y);
+          const labelWidth = doc.getTextWidth(label);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(80, 80, 80);
+          doc.text(value, x + labelWidth, y);
+        };
+
+        doc.setFontSize(10);
+        drawLabelValue("Date: ", formatDate(rows[0].createdAt), 14, 18);
+        drawLabelValue("For: ", rows[0].forType || '-', 65, 18);
+        drawLabelValue("Party: ", partyName, 14, 24);
+        drawLabelValue("Event-Date: ", formatDate(rows[0].eventDate), 65, 24);
+
+        // Yield slightly so UI updates
+        await new Promise(r => setTimeout(r, 20));
+
+        autoTable(doc, {
+          startY: 30,
+          columns: reportColumns,
+          body: body,
+          theme: 'grid',
+          columnStyles: colStyles,
+          headStyles: {
+            fillColor: [109, 40, 217],
+            textColor: 255,
+            fontSize: 10,
+            fontStyle: 'bold',
+            halign: 'center',
+            cellPadding: 3
+          },
+          styles: {
+            fontSize: 9,
+            cellPadding: 2.5,
+            halign: 'center',
+            valign: 'middle',
+            overflow: 'ellipsize',
+            minCellHeight: 14
+          },
+          alternateRowStyles: { fillColor: [249, 250, 251] },
+          rowPageBreak: 'avoid',
+          margin: { top: 14, right: 6, bottom: 20, left: 6 },
+          willDrawCell: (data) => {
+            if (data.column.dataKey === 'image' && data.cell.section === 'body') {
+              data.cell.text = [];
+            }
+          },
+          didDrawCell: (data) => {
+            if (data.column.dataKey === 'image' && data.cell.section === 'body') {
+              const url = data.cell.raw;
+              const dispUrl = getDisplayableImageUrl(url);
+              const b64 = imageMap[dispUrl] || imageMap[url];
+              if (b64) {
+                const padding = 1.5;
+                const imgSize = Math.min(data.cell.width - padding * 2, data.cell.height - padding * 2, 10);
+                const x = data.cell.x + (data.cell.width - imgSize) / 2;
+                const y = data.cell.y + (data.cell.height - imgSize) / 2;
+                try {
+                  doc.addImage(b64, 'JPEG', x, y, imgSize, imgSize);
+                } catch {
+                  try { doc.addImage(b64, x, y, imgSize, imgSize); } catch {}
+                }
+              }
+            }
+          },
+          didDrawPage: function () {
+            const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
+            doc.setFontSize(10);
+            doc.setTextColor(120);
+            doc.text(
+              `Page ${pageNumber} of {total_pages_count_string}`,
+              doc.internal.pageSize.width - 6,
+              doc.internal.pageSize.height - 8,
+              { align: 'right' }
+            );
+          }
+        });
+
+        if (typeof doc.putTotalPages === 'function') {
+          doc.putTotalPages('{total_pages_count_string}');
+        }
+
+        doc.save(`${partyName}_Issue_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+        showToast('Report generated successfully');
+      } catch (err) {
+        console.error("Party Report PDF Error:", err);
+        showToast('Failed to generate report', 'error');
+      } finally {
+        setIsReportGenerating(false);
+        setGeneratingReportParty(null);
+      }
+    }, 50);
+  };
+
+  useEffect(() => {
+    setSelectedPartyCard(null);
+    setIssuePage(1);
+    setPartyGroupPage(1);
+  }, [activeTab, issuedFilterItem, issuedFilterType, issuedFilterParty, issuedStartDate, issuedEndDate, searchTerm]);
+
+  useEffect(() => {
+    setReturnPage(1);
+  }, [returnFilterItem, returnFilterType, returnFilterParty, returnStartDate, returnEndDate, searchTerm]);
+
+  useEffect(() => {
+    setPartyDetailPage(1);
+  }, [selectedPartyCard]);
+
+  useEffect(() => { fetchInitialData(); fetchHistory(); }, []);
+
+  useEffect(() => {
+    const currentType = isIssueModalOpen ? issueForm.inventoryType : returnForm.inventoryType;
+    if (currentType) {
+      const uniqueItems = [...new Set(items.filter(i => normalizeForMatch(i.inventory_type) === normalizeForMatch(currentType)).map(i => i.item_name))].filter(Boolean);
+      setFilteredItems(uniqueItems);
+    } else { setFilteredItems([]); }
+  }, [issueForm.inventoryType, returnForm.inventoryType, items, isIssueModalOpen, isReturnModalOpen]);
+
+  // Derive Options for Filters
+  const issuedOptions = useMemo(() => {
+    const s = normalizeForMatch(searchTerm);
+    const filteredByItem = issueHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!issuedFilterParty || normalizeForMatch(r.partyName) === normalizeForMatch(issuedFilterParty));
+    });
+    const filteredByType = issueHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterParty || normalizeForMatch(r.partyName) === normalizeForMatch(issuedFilterParty));
+    });
+    const filteredByParty = issueHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterType || r.inventoryType === issuedFilterType);
+    });
+
+    return {
+      items: [...new Set(filteredByItem.map(r => r.itemName).filter(Boolean))].sort(),
+      types: [...new Set(filteredByType.map(r => r.inventoryType).filter(Boolean))].sort(),
+      parties: [...new Set(filteredByParty.map(r => r.partyName).filter(Boolean))].sort(),
+    };
+  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty]);
+
+  const returnOptions = useMemo(() => {
+    const s = normalizeForMatch(searchTerm);
+    const filteredByItem = returnHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!returnFilterType || r.inventoryType === returnFilterType) && (!returnFilterParty || normalizeForMatch(r.partyName) === normalizeForMatch(returnFilterParty));
+    });
+    const filteredByType = returnHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!returnFilterItem || r.itemName === returnFilterItem) && (!returnFilterParty || normalizeForMatch(r.partyName) === normalizeForMatch(returnFilterParty));
+    });
+    const filteredByParty = returnHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!returnFilterItem || r.itemName === returnFilterItem) && (!returnFilterType || r.inventoryType === returnFilterType);
+    });
+
+    return {
+      items: [...new Set(filteredByItem.map(r => r.itemName).filter(Boolean))].sort(),
+      types: [...new Set(filteredByType.map(r => r.inventoryType).filter(Boolean))].sort(),
+      parties: [...new Set(filteredByParty.map(r => r.partyName).filter(Boolean))].sort(),
+    };
+  }, [returnHistory, searchTerm, returnFilterItem, returnFilterType, returnFilterParty]);
+
+  const filteredIssuedHistory = useMemo(() => {
+    const s = normalizeForMatch(searchTerm);
+    return issueHistory.filter(row => {
+      const matchesSearch = !s || [row.serial, row.itemName, row.partyName, row.inventoryType, row.issuer, row.venueName].some(v => v && normalizeForMatch(v).includes(s));
+      const matchesItem = !issuedFilterItem || row.itemName === issuedFilterItem;
+      const matchesType = !issuedFilterType || row.inventoryType === issuedFilterType;
+      const matchesParty = !issuedFilterParty || normalizeForMatch(row.partyName) === normalizeForMatch(issuedFilterParty);
+      let matchesDate = true;
+      if (issuedStartDate || issuedEndDate) {
+        const rowDate = parseRowDate(row.eventDate);
+        if (!rowDate || isNaN(rowDate)) return true;
+        if (issuedStartDate && rowDate < new Date(issuedStartDate)) matchesDate = false;
+        if (issuedEndDate) {
+          const end = new Date(issuedEndDate);
+          end.setHours(23, 59, 59, 999);
+          if (rowDate > end) matchesDate = false;
+        }
+      }
+      return matchesSearch && matchesItem && matchesType && matchesParty && matchesDate;
+    });
+  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty, issuedStartDate, issuedEndDate]);
+
+  const shouldGroup = activeTab === 'issued' && !(issuedFilterItem || issuedFilterType || issuedFilterParty || issuedStartDate || issuedEndDate || searchTerm);
+
+  const groupedIssuedData = useMemo(() => {
+    if (!shouldGroup) return [];
+    const groups = {};
+    issueHistory.forEach(row => {
+      const party = row.partyName || 'Unknown';
+      if (!groups[party]) groups[party] = [];
+      groups[party].push(row);
+    });
+    return Object.entries(groups).map(([party, rows]) => {
+      const latestRow = rows[0];
+      const latestDate = latestRow ? latestRow.eventDate : '';
+      const totalQty = rows.reduce((sum, r) => sum + parseNumber(r.qty), 0);
+      const totalCost = rows.reduce((sum, r) => sum + parseNumber(r.estimatedCost), 0);
+      return { partyName: party, latestDate, totalQty, totalCost, rows };
+    });
+  }, [issueHistory, shouldGroup]);
+
+  const filteredReturnHistory = useMemo(() => {
+    const s = normalizeForMatch(searchTerm);
+    return returnHistory.filter(row => {
+      const matchesSearch = !s || [row.serial, row.itemName, row.partyName, row.inventoryType].some(v => v && normalizeForMatch(v).includes(s));
+      const matchesItem = !returnFilterItem || row.itemName === returnFilterItem;
+      const matchesType = !returnFilterType || row.inventoryType === returnFilterType;
+      const matchesParty = !returnFilterParty || normalizeForMatch(row.partyName) === normalizeForMatch(returnFilterParty);
+      let matchesDate = true;
+      if (returnStartDate || returnEndDate) {
+        const rowDate = parseRowDate(row.eventDate);
+        if (!rowDate || isNaN(rowDate)) return true;
+        if (returnStartDate && rowDate < new Date(returnStartDate)) matchesDate = false;
+        if (returnEndDate) {
+          const end = new Date(returnEndDate);
+          end.setHours(23, 59, 59, 999);
+          if (rowDate > end) matchesDate = false;
+        }
+      }
+      return matchesSearch && matchesItem && matchesType && matchesParty && matchesDate;
+    });
+  }, [returnHistory, searchTerm, returnFilterItem, returnFilterType, returnFilterParty, returnStartDate, returnEndDate]);
+
+  const totalInventoryCost = useMemo(() => {
+    const data = activeTab === 'issued' ? filteredIssuedHistory : filteredReturnHistory;
+    return data.reduce((sum, row) => {
+      const val = parseFloat((activeTab === 'issued' ? row.estimatedCost : row.totalCost) || 0);
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0);
+  }, [activeTab, filteredIssuedHistory, filteredReturnHistory]);
+
+  const validationState = useMemo(() => {
+    if (!issueForm.itemsName || !issueForm.eventDate) return { remaining: 0, isOver: false, committed: 0, availableForThisGroup: 0 };
+
+    const selectedItem = normalizeForMatch(issueForm.itemsName);
+    const selectedDate = issueForm.eventDate;
+    const masterStock = Number(issueForm.openingBalance) || 0;
+    const currentQty = Number(issueForm.issueData) || 0;
+    const currentParty = normalizeForMatch(issueForm.partyName);
+    const currentVenue = normalizeForMatch(issueForm.foodName);
+    const currentSlot = normalizeForMatch(issueForm.eventTime || 'Regular');
+    const currentKey = `${currentParty}|${currentVenue}`;
+
+    const partyVenueMap = {};
+    issueHistory.forEach(row => {
+      // Exclude the record currently being edited so its previous quantity is not double counted
+      if (isEditing && editingIssueId && row.id === editingIssueId) return;
+
+      const rowItem = normalizeForMatch(row.itemName);
+      const rowDate = toInputDate(row.eventDate);
+
+      if (rowItem === selectedItem && rowDate === selectedDate) {
+        const p = normalizeForMatch(row.partyName);
+        const v = normalizeForMatch(row.venueName);
+        const s = normalizeForMatch(row.eventType || 'Regular');
+        const q = Number(row.qty || 0);
+
+        const key = `${p}|${v}`;
+        if (!partyVenueMap[key]) partyVenueMap[key] = {};
+        partyVenueMap[key][s] = (partyVenueMap[key][s] || 0) + q;
+      }
+    });
+
+    const groupPeaks = {};
+    Object.entries(partyVenueMap).forEach(([key, slots]) => {
+      groupPeaks[key] = Math.max(...Object.values(slots), 0);
+    });
+
+    let committedByOthers = 0;
+    Object.keys(groupPeaks).forEach(key => {
+      if (key !== currentKey) committedByOthers += groupPeaks[key];
+    });
+
+    const slotsInCurrent = partyVenueMap[currentKey] || {};
+    const sumInCurrentSlot = (slotsInCurrent[currentSlot] || 0) + currentQty;
+    const otherSlotsInCurrent = Object.entries(slotsInCurrent)
+      .filter(([s]) => s !== currentSlot)
+      .map(entry => entry[1]);
+
+    const currentGroupPotentialPeak = Math.max(sumInCurrentSlot, ...otherSlotsInCurrent, 0);
+    const totalPotential = committedByOthers + currentGroupPotentialPeak;
+    const isOver = totalPotential > masterStock;
+    const totalCommittedRightNow = Object.values(groupPeaks).reduce((a, b) => a + b, 0);
+
+    return {
+      remaining: Math.max(0, masterStock - totalCommittedRightNow),
+      isOver,
+      committed: totalCommittedRightNow,
+      availableForThisGroup: Math.max(0, masterStock - committedByOthers)
+    };
+  }, [issueHistory, issueForm.itemsName, issueForm.eventDate, issueForm.partyName, issueForm.foodName, issueForm.eventTime, issueForm.issueData, issueForm.openingBalance, isEditing, editingIssueId]);
+
+  // Resolves default Renting Rate: Master rental_price -> Latest Purchase Price -> '0'
+  const resolveRentingRate = useCallback((item) => {
+    if (!item) return '0';
+    const masterRent = Number(item.rental_price || 0);
+    if (masterRent > 0) return String(masterRent);
+    const purchasePrice = itemPurchasePriceMap[item.id];
+    if (purchasePrice != null && Number(purchasePrice) > 0) return String(purchasePrice);
+    return '0';
+  }, [itemPurchasePriceMap]);
+
+  // Resolves default Damage Rate: Master damage_price -> Latest Purchase Price -> '0'
+  const resolveDamageRate = useCallback((item) => {
+    if (!item) return '0';
+    const masterDamage = Number(item.damage_price || 0);
+    if (masterDamage > 0) return String(masterDamage);
+    const purchasePrice = itemPurchasePriceMap[item.id];
+    if (purchasePrice != null && Number(purchasePrice) > 0) return String(purchasePrice);
+    return '0';
+  }, [itemPurchasePriceMap]);
+
+  // Auto-calculate Return Qty, Consumed Qty and Total Cost
+  useEffect(() => {
+    if (!isReturnModalOpen) return;
+    const isConsumable = isConsumableType(returnForm.inventoryType);
+    const issueQty = Number(returnForm.issueQty || 0);
+    const rentingRate = Number(returnForm.rentingRate || 0);
+
+    if (isConsumable) {
+      const remaining = Math.max(0, Number(returnForm.remainingQty || 0));
+      const consumed = Math.max(0, issueQty - remaining);
+      const totalCost = returnForm.forType === 'H3' ? 0 : (consumed * rentingRate);
+
+      setReturnForm(prev => {
+        const remStr = remaining.toString();
+        const consStr = consumed.toString();
+        const costStr = totalCost.toFixed(2);
+        if (prev.returnData === remStr && prev.consumedQty === consStr && prev.totalCost === costStr) return prev;
+        return { ...prev, returnData: remStr, consumedQty: consStr, totalCost: costStr };
+      });
+    } else {
+      const damage = Number(returnForm.damageItems || 0);
+      const missing = Number(returnForm.missingItems || 0);
+      const damageRate = Number(returnForm.damageRate || 0);
+
+      const returnQty = Math.max(0, issueQty - damage - missing);
+      const totalCost = ((damage + missing) * damageRate) + (returnQty * rentingRate);
+
+      setReturnForm(prev => {
+        const retStr = returnQty.toString();
+        const costStr = totalCost.toFixed(2);
+        if (prev.returnData === retStr && prev.totalCost === costStr && prev.consumedQty === '0') return prev;
+        return { ...prev, returnData: retStr, consumedQty: '0', totalCost: costStr };
+      });
+    }
+  }, [
+    returnForm.inventoryType,
+    returnForm.issueQty,
+    returnForm.remainingQty,
+    returnForm.damageItems,
+    returnForm.missingItems,
+    returnForm.damageRate,
+    returnForm.rentingRate,
+    returnForm.forType,
+    isReturnModalOpen
+  ]);
+
+  const handleSelectReturnItem = (itemName) => {
+    const item = items.find(i => normalizeForMatch(i.item_name) === normalizeForMatch(itemName) && i.inventory_type === returnForm.inventoryType);
+    const openingStock = item ? (itemStockMap[item.id]?.current_stock ?? 0) : 0;
+    const stock = item ? itemStockMap[item.id] : null;
+    // Default to the item's existing photo — only a genuinely new upload
+    // replaces it, avoiding a duplicate copy of the same image per return.
+    const existingImage = item ? (item.image_url || stock?.image_url || '') : '';
+
+    setReturnForm(prev => ({
+      ...prev,
+      itemId: item ? item.id : '',
+      itemsName: itemName,
+      department: item ? item.department : '',
+      openingBalance: openingStock.toString(),
+      closingBalance: (openingStock - Number(prev.issueQty || 0)).toString(),
+      remainingQty: '0',
+      consumedQty: prev.issueQty || '0',
+      damageRate: resolveDamageRate(item),
+      rentingRate: resolveRentingRate(item),
+      imageUrl: existingImage
+    }));
+    if (existingImage) setImagePreview(getDisplayableImageUrl(existingImage));
+  };
+
+  useEffect(() => {
+    if (!isReturnModalOpen || isEditing || !returnForm.itemsName) {
+      if (!isEditing && !returnForm.itemsName) {
+        setMatchingIssuedRows([]);
+        setLastReturnInfo({ date: '-', qty: '-' });
+      }
+      return;
+    }
+
+    const selectedItem = returnForm.itemsName;
+    const selectedParty = returnForm.partyName;
+    const selectedType = returnForm.inventoryType;
+
+    const partyNorm = normalizeForMatch(selectedParty);
+    const itemNorm = normalizeForMatch(selectedItem);
+    const typeNorm = normalizeForMatch(selectedType);
+
+    // 1. Last return info for this item (prefer matching party if available)
+    const matchingPartyReturns = returnHistory.filter(row =>
+      normalizeForMatch(row.itemName) === itemNorm &&
+      partyNorm && normalizeForMatch(row.partyName) === partyNorm
+    );
+    const allItemReturns = returnHistory.filter(row =>
+      normalizeForMatch(row.itemName) === itemNorm
+    );
+
+    const relevantReturns = matchingPartyReturns.length > 0 ? matchingPartyReturns : allItemReturns;
+    let latestReturnRow = null;
+    let maxReturnDate = new Date('1970-01-01');
+
+    relevantReturns.forEach(row => {
+      const rDateStr = toInputDate(row.returnDate);
+      if (rDateStr) {
+        const d = new Date(rDateStr);
+        if (!isNaN(d) && d >= maxReturnDate) {
+          maxReturnDate = d;
+          latestReturnRow = row;
+        }
+      }
+    });
+
+    if (latestReturnRow) {
+      setLastReturnInfo({
+        date: formatDate(latestReturnRow.returnDate),
+        qty: String(latestReturnRow.qty || '0')
+      });
+    } else {
+      setLastReturnInfo({ date: 'No return history', qty: '0' });
+    }
+
+    // 2. Find matching issues for this item & party
+    const matchingIssues = issueHistory.filter(row => {
+      if (normalizeForMatch(row.itemName) !== itemNorm) return false;
+      if (partyNorm && normalizeForMatch(row.partyName) !== partyNorm) return false;
+      if (typeNorm && normalizeForMatch(row.inventoryType) !== typeNorm) return false;
+      return true;
+    });
+
+    matchingIssues.sort((a, b) => new Date(toInputDate(a.eventDate)) - new Date(toInputDate(b.eventDate)));
+
+    setMatchingIssuedRows(matchingIssues);
+
+    const isSingleRow = matchingIssues.length === 1;
+    const totalIssued = matchingIssues.reduce((sum, r) => sum + (parseNumber(r.qty) || 0), 0);
+    const totalReturned = matchingPartyReturns.reduce((sum, r) => {
+      const retQty = parseNumber(r.qty);
+      const dmgQty = parseNumber(r.damage);
+      const misQty = parseNumber(r.missing);
+      const issQty = parseNumber(r.issueQty);
+      return sum + Math.max(retQty + dmgQty + misQty, issQty, retQty);
+    }, 0);
+    const pendingQty = Math.max(0, totalIssued - totalReturned);
+
+    const resolvedIssueQty = pendingQty > 0
+      ? pendingQty
+      : (isSingleRow
+          ? parseNumber(matchingIssues[0].qty)
+          : (matchingIssues.length > 0 ? Math.max(...matchingIssues.map(row => parseNumber(row.qty))) : 0));
+
+    const latestIssue = matchingIssues[matchingIssues.length - 1];
+    const chainForType = latestIssue ? (latestIssue.forType || 'Rent') : 'Rent';
+    const item = items.find(i => normalizeForMatch(i.item_name) === itemNorm);
+    const rentingRate = latestIssue && latestIssue.rentingRate != null && Number(latestIssue.rentingRate) > 0
+      ? String(latestIssue.rentingRate)
+      : resolveRentingRate(item);
+
+    setReturnForm(prev => {
+      const openingStock = Number(prev.openingBalance || 0);
+      const newClosingBalance = (openingStock - resolvedIssueQty).toString();
+
+      if (
+        prev.issueQty === resolvedIssueQty.toString() &&
+        prev.forType === chainForType &&
+        prev.rentingRate === rentingRate.toString() &&
+        prev.closingBalance === newClosingBalance
+      ) return prev;
+
+      return {
+        ...prev,
+        issueQty: resolvedIssueQty.toString(),
+        forType: chainForType,
+        rentingRate: rentingRate.toString(),
+        closingBalance: newClosingBalance
+      };
+    });
+  }, [isReturnModalOpen, isEditing, returnForm.itemsName, returnForm.partyName, returnForm.inventoryType, returnForm.returnDate, issueHistory, returnHistory, items, itemStockMap]);
+
+  const handleEditIssue = (row) => {
+    const item = items.find(i => (row.itemId && i.id === row.itemId) || (normalizeForMatch(i.item_name) === normalizeForMatch(row.itemName) && (!row.inventoryType || normalizeForMatch(i.inventory_type) === normalizeForMatch(row.inventoryType))));
+    const resolvedItemId = row.itemId || (item ? item.id : '');
+    const stock = item ? itemStockMap[item.id] : null;
+    const openingStock = stock?.current_stock ?? (row.openingBalance !== undefined && row.openingBalance !== null && row.openingBalance !== '' ? row.openingBalance : 0);
+
+    setIssueForm({
+      forType: row.forType || 'H3',
+      issuer: row.issuer || '',
+      itemId: resolvedItemId,
+      inventoryType: row.inventoryType || (item ? item.inventory_type : ''),
+      department: row.department || (item ? item.department : ''),
+      itemsName: row.itemName || '',
+      openingBalance: String(openingStock),
+      perUnit: row.rentingRate !== undefined && row.rentingRate !== null ? String(row.rentingRate) : resolveRentingRate(item),
+      unit: row.damageRate !== undefined && row.damageRate !== null ? String(row.damageRate) : resolveDamageRate(item),
+      eventDate: toInputDate(row.eventDate),
+      partyName: row.partyName || '',
+      eventTime: row.eventType || '',
+      foodName: row.venueName || '',
+      issueData: row.qty !== undefined && row.qty !== null ? String(row.qty) : '',
+      dishes: row.dishes || '',
+      remarks: row.remarks || '',
+      imageUrl: row.imageUrl || ''
+    });
+    setEditingIssueId(row.id);
+    setIsEditing(true);
+    setIsIssueModalOpen(true);
+    if (row.imageUrl) setImagePreview(getDisplayableImageUrl(row.imageUrl));
+    else setImagePreview(null);
+  };
+
+  const handleDeleteSingleRecord = async (row) => {
+    const isIssued = activeTab === 'issued';
+    const targetTable = isIssued ? TABLES.ISSUES : TABLES.RETURNS;
+    const label = row.serial || row.itemName || 'this record';
+
+    if (!window.confirm(`Are you sure you want to delete ${label}?`)) return;
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from(targetTable).delete().eq('id', row.id);
+      if (error) throw new Error(error.message);
+
+      showToast(`Record ${label} deleted successfully`);
+      fetchHistory();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete record', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleIssueSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      if (validationState.isOver) {
+        showToast(`Error: Exceeds available stock for this date (Limit: ${validationState.availableForThisGroup})`, 'error');
+        setIsSubmitting(false);
+        return;
+      }
+      if (!issueForm.itemId) {
+        showToast('Select an item first.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const imageUrl = selectedImage ? await uploadImage(selectedImage, STORAGE_FOLDERS.ISSUE_RETURN_IMAGES) : (issueForm.imageUrl || null);
+      const opening = parseFloat(issueForm.openingBalance) || 0;
+      const consumed = parseFloat(issueForm.issueData) || 0;
+      const closing = opening - consumed;
+
+      const payload = {
+        item_id: issueForm.itemId || null,
+        party_name: cleanText(issueForm.partyName) || null,
+        event_date: issueForm.eventDate || null,
+        issue_qty: consumed,
+        damage_rate: parseFloat(issueForm.unit) || 0,
+        renting_rate: parseFloat(issueForm.perUnit) || 0,
+        opening_balance: opening,
+        closing_balance: closing,
+        venue_name: cleanText(issueForm.foodName) || null,
+        image_url: imageUrl,
+        remarks: cleanText(issueForm.remarks) || null,
+        event_type: cleanText(issueForm.eventTime) || null,
+        for_type: issueForm.forType || ENUMS.FOR_TYPE.RENT,
+        issuer: cleanText(issueForm.issuer) || null,
+        dishes: cleanText(issueForm.dishes) || null
+      };
+
+      if (isEditing && editingIssueId) {
+        const { error } = await supabase.from(TABLES.ISSUES).update(payload).eq(COLUMNS.ISSUES.ID, editingIssueId);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from(TABLES.ISSUES).insert(payload);
+        if (error) throw new Error(error.message);
+      }
+
+      showToast(isEditing ? 'Issue record updated successfully' : 'Issue recorded successfully');
+      setIsIssueModalOpen(false);
+      setIsEditing(false);
+      setEditingIssueId(null);
+      setIssueForm({ forType: 'H3', issuer: '', itemId: '', inventoryType: '', department: '', itemsName: '', openingBalance: '', perUnit: '', unit: '', eventDate: '', partyName: '', eventTime: '', foodName: '', issueData: '', dishes: '', remarks: '', imageUrl: '' });
+      setSelectedImage(null); setImagePreview(null);
+    } catch (err) {
+      showToast(err.message || 'Failed to submit', 'error');
+    } finally {
+      fetchHistory();
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditReturn = (row) => {
+    const isCons = isConsumableType(row.inventoryType);
+    const resolvedConsumed = row.consumed != null ? String(row.consumed) : (isCons ? String(Math.max(0, Number(row.issueQty || 0) - Number(row.qty || 0))) : '0');
+    setReturnForm({
+      itemId: row.itemId,
+      inventoryType: row.inventoryType,
+      department: row.department,
+      itemsName: row.itemName,
+      partyName: row.partyName,
+      eventDate: toInputDate(row.eventDate),
+      returnDate: toInputDate(row.returnDate),
+      issueQty: row.issueQty,
+      remainingQty: String(row.qty ?? '0'),
+      consumedQty: resolvedConsumed,
+      returnData: row.qty,
+      damageItems: row.damage,
+      missingItems: row.missing,
+      damageRate: row.damageRate,
+      rentingRate: row.rentingRate,
+      openingBalance: row.openingBalance,
+      closingBalance: row.closingBalance,
+      remarks: row.remarks,
+      imageUrl: row.imageUrl,
+      totalCost: row.totalCost || '0',
+      forType: row.forType || ''
+    });
+    setEditingReturnId(row.id); setIsEditing(true); setIsReturnModalOpen(true); setImagePreview(getDisplayableImageUrl(row.imageUrl));
+  };
+
+  const handleReturnSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      if (!isEditing && !returnForm.itemId) {
+        showToast('Select an item first.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const isCons = isConsumableType(returnForm.inventoryType);
+      const issueQty = parseFloat(returnForm.issueQty) || 0;
+      const returnQty = parseFloat(returnForm.returnData) || 0;
+
+      if (isCons && returnQty > issueQty) {
+        showToast(`Remaining quantity (${returnQty}) cannot exceed issued quantity (${issueQty})`, 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const imageUrl = selectedImage ? await uploadImage(selectedImage, STORAGE_FOLDERS.ISSUE_RETURN_IMAGES) : (returnForm.imageUrl || null);
+      const damageQty = isCons ? 0 : (parseFloat(returnForm.damageItems) || 0);
+      const missingQty = isCons ? 0 : (parseFloat(returnForm.missingItems) || 0);
+      const consumedQty = isCons ? (parseFloat(returnForm.consumedQty) || 0) : 0;
+      const damageRate = isCons ? 0 : (parseFloat(returnForm.damageRate) || 0);
+      const rentingRate = parseFloat(returnForm.rentingRate) || 0;
+
+      const totalBalance = Number(returnForm.closingBalance || 0) + returnQty - damageQty - missingQty;
+
+      const payload = {
+        party_name: cleanText(returnForm.partyName) || null,
+        return_date: returnForm.returnDate || null,
+        issue_qty: issueQty,
+        return_qty: returnQty,
+        damage_qty: damageQty,
+        missing_qty: missingQty,
+        consumed_qty: consumedQty,
+        damage_rate: damageRate,
+        renting_rate: rentingRate,
+        opening_balance: parseFloat(returnForm.openingBalance) || 0,
+        closing_balance: parseFloat(returnForm.closingBalance) || 0,
+        total_balance: totalBalance,
+        image_url: imageUrl,
+        remarks: cleanText(returnForm.remarks) || null,
+        for_type: returnForm.forType || null
+      };
+
+      if (isEditing) {
+        payload.event_date = returnForm.eventDate || null;
+        const { error } = await supabase.from(TABLES.RETURNS).update(payload).eq(COLUMNS.RETURNS.ID, editingReturnId);
+        if (error) throw new Error(error.message);
+      } else {
+        payload.item_id = returnForm.itemId;
+        const { error } = await supabase.from(TABLES.RETURNS).insert(payload);
+        if (error) throw new Error(error.message);
+      }
+
+      showToast(isEditing ? 'Record updated successfully' : 'Return recorded successfully');
+      setIsReturnModalOpen(false); setIsEditing(false); setEditingReturnId(null);
+      setReturnForm({
+        itemId: '', inventoryType: '', itemsName: '', department: '',
+        openingBalance: '', damageRate: '', rentingRate: '', totalCost: '',
+        partyName: '', eventDate: '', returnData: '', returnDate: new Date().toISOString().split('T')[0],
+        issueQty: '', remainingQty: '0', consumedQty: '0', damageItems: '0', missingItems: '0',
+        closingBalance: '', remarks: '', imageUrl: '', forType: ''
+      });
+      setSelectedImage(null); setImagePreview(null);
+    } catch (err) {
+      showToast(err.message || 'Failed to submit', 'error');
+    } finally {
+      fetchHistory();
+      setIsSubmitting(false);
+    }
+  };
+
+  const getFilteredHistory = () => activeTab === 'issued' ? filteredIssuedHistory : filteredReturnHistory;
+
+  const handleGenerateReport = () => {
+    const isIssued = activeTab === 'issued';
+    const sourceData = isIssued ? filteredIssuedHistory : filteredReturnHistory;
+
+    const filteredReportData = sourceData.filter(row => {
+      if (isIssued && shouldGroup && selectedPartyCard) {
+        return normalizeForMatch(row.partyName) === normalizeForMatch(selectedPartyCard);
+      }
+      return true;
+    });
+
+    if (filteredReportData.length === 0) {
+      showToast('No records to export', 'info');
+      return;
+    }
+
+    const firstRow = filteredReportData[0];
+    const commonDateRaw = firstRow.createdAt;
+    const commonParty = firstRow.partyName;
+    const commonFor = firstRow.forType;
+    const commonEventDateRaw = isIssued ? firstRow.eventDate : null;
+
+    const allSameDate = filteredReportData.every(row => formatDate(row.createdAt) === formatDate(commonDateRaw));
+    const allSameParty = filteredReportData.every(row => row.partyName === commonParty);
+    const allSameFor = filteredReportData.every(row => row.forType === commonFor);
+    const allSameEventDate = isIssued && filteredReportData.every(row => formatDate(row.eventDate) === formatDate(commonEventDateRaw));
+
+    const uniformInfo = {
+      date: allSameDate ? commonDateRaw : null,
+      party: allSameParty ? commonParty : null,
+      for: allSameFor ? commonFor : null,
+      eventDate: allSameEventDate ? commonEventDateRaw : null
+    };
+
+    const columnsToInclude = columnConfig.filter(col => visibleColumns[col.key] !== false && col.key !== 'actions');
+
+    const reportColumns = [
+      { header: 'S. No.', dataKey: 'sNo' },
+      ...columnsToInclude.map(col => ({ header: col.label, dataKey: col.key })),
+      { header: 'Remark', dataKey: 'remark' }
+    ];
+
+    const getItemImage = (row) => {
+      if (row.imageUrl && row.imageUrl !== 'No Image') return row.imageUrl;
+      const match = items.find(i => i.id === row.itemId || i.item_name === row.itemName);
+      return match?.image_url && match.image_url !== 'No Image' ? match.image_url : null;
+    };
+
+    const imageUrlMap = {};
+    const body = filteredReportData.map((row, index) => {
+      const rowData = { sNo: index + 1 };
+      columnsToInclude.forEach(col => {
+        if (col.key === 'image') {
+          const itemImg = getItemImage(row);
+          imageUrlMap[index] = itemImg || '';
+          rowData[col.key] = '';
+        } else {
+          let val = row[col.key === 'type' ? 'inventoryType' : col.key === 'item' ? 'itemName' : col.key === 'party' ? 'partyName' : col.key === 'for' ? 'forType' : col.key === 'serial' ? 'serial' : col.key];
+          if (['date'].includes(col.key)) {
+            rowData[col.key] = formatDate(row.createdAt);
+          } else if (['eventDate', 'returnDate'].includes(col.key)) {
+            rowData[col.key] = formatDate(val);
+          } else if (['estimatedCost', 'totalCost'].includes(col.key)) {
+            rowData[col.key] = `Rs ${parseFloat(val || 0).toFixed(2)}`;
+          } else if (col.key === 'notReturned') {
+            rowData[col.key] = (Number(row.damage || 0) + Number(row.missing || 0));
+          } else {
+            rowData[col.key] = val != null ? val : '-';
+          }
+        }
+      });
+      rowData['remark'] = '';
+      return rowData;
+    });
+
+    setIsReportGenerating(true);
+
+    setTimeout(async () => {
+      try {
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = doc.internal.pageSize.width;
+        const pageMargin = 6;
+        const availableWidth = pageWidth - (pageMargin * 2);
+
+        const colWeights = {
+          sNo: 0.55,
+          serial: 0.95,
+          type: 1.0,
+          item: 1.8,
+          issueQty: 0.75,
+          qty: 0.75,
+          image: 0.8,
+          date: 1.35,
+          for: 0.55,
+          party: 1.7,
+          eventDate: 1.35,
+          eventType: 1.0,
+          returnDate: 1.35,
+          damage: 0.9,
+          missing: 0.9,
+          notReturned: 1.2,
+          estimatedCost: 1.35,
+          totalCost: 1.35,
+          dishes: 1.3,
+          remark: 0.8
+        };
+
+        const hasImage = reportColumns.some(c => c.dataKey === 'image');
+        const nonImageWidth = hasImage ? availableWidth - 8.5 : availableWidth;
+        const nonImageTotalWeight = reportColumns
+          .filter(c => c.dataKey !== 'image')
+          .reduce((sum, col) => sum + (colWeights[col.dataKey] || 1.0), 0);
+
+        const colStyles = {};
+        reportColumns.forEach(col => {
+          if (col.dataKey === 'image') {
+            colStyles[col.dataKey] = {
+              cellWidth: 8.5,
+              halign: 'center'
+            };
+          } else {
+            const weight = colWeights[col.dataKey] || 1.0;
+            colStyles[col.dataKey] = {
+              cellWidth: (nonImageWidth / nonImageTotalWeight) * weight,
+              halign: ['item', 'party', 'dishes'].includes(col.dataKey) ? 'left' : 'center'
+            };
+          }
+        });
+
+        let imageMap = {};
+        if (visibleColumns.image) {
+          const rawUrls = filteredReportData.map(row => getItemImage(row)).filter(Boolean);
+          const displayUrls = rawUrls.map(u => getDisplayableImageUrl(u));
+          imageMap = await loadImagesBatched(displayUrls, 12);
+        }
+
+        const totalCostSum = filteredReportData.reduce((sum, row) => sum + (parseFloat(row.totalCost) || 0), 0);
+        const totalEstimatedCostSum = filteredReportData.reduce((sum, row) => sum + (parseFloat(row.estimatedCost) || 0), 0);
+        const totalIssueQtySum = filteredReportData.reduce((sum, row) => sum + (Number(row.issueQty) || 0), 0);
+        const totalReturnQtySum = filteredReportData.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+        const totalDamageSum = filteredReportData.reduce((sum, row) => sum + (Number(row.damage) || 0), 0);
+        const totalMissingSum = filteredReportData.reduce((sum, row) => sum + (Number(row.missing) || 0), 0);
+        const totalNotReturnedSum = filteredReportData.reduce((sum, row) => sum + (Number(row.damage || 0) + Number(row.missing || 0)), 0);
+
+        const footRow = {};
+        reportColumns.forEach(col => {
+          if (col.dataKey === 'sNo') {
+            footRow[col.dataKey] = 'Total';
+          } else if (col.dataKey === 'totalCost') {
+            footRow[col.dataKey] = `Rs ${totalCostSum.toFixed(2)}`;
+          } else if (col.dataKey === 'estimatedCost') {
+            footRow[col.dataKey] = `Rs ${totalEstimatedCostSum.toFixed(2)}`;
+          } else if (col.dataKey === 'issueQty') {
+            footRow[col.dataKey] = totalIssueQtySum || '-';
+          } else if (col.dataKey === 'qty') {
+            footRow[col.dataKey] = totalReturnQtySum || '-';
+          } else if (col.dataKey === 'damage') {
+            footRow[col.dataKey] = totalDamageSum || '0';
+          } else if (col.dataKey === 'missing') {
+            footRow[col.dataKey] = totalMissingSum || '0';
+          } else if (col.dataKey === 'notReturned') {
+            footRow[col.dataKey] = totalNotReturnedSum || '0';
+          } else {
+            footRow[col.dataKey] = '';
+          }
+        });
+
+        const title = `${isIssued ? 'ISSUED' : 'RETURN'} HISTORY REPORT`;
+        const countText = `(${body.length})`;
+        doc.setFontSize(13);
+        doc.setTextColor(124, 58, 237);
+        doc.text(title, pageMargin, 9);
+
+        const titleWidth = doc.getTextWidth(title);
+        doc.setFontSize(8.5);
+        doc.setTextColor(150, 150, 150);
+        doc.text(countText, pageMargin + titleWidth + 2, 9);
+
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - pageMargin, 9, { align: 'right' });
+
+        doc.setFontSize(7.5);
+        doc.setTextColor(60, 60, 60);
+        doc.setFont(undefined, 'bold');
+
+        const dateStr = uniformInfo.date ? formatDate(uniformInfo.date) : 'Various';
+        const forStr = uniformInfo.for || 'Various';
+        const partyStr = uniformInfo.party || 'Various';
+        const eventDateStr = uniformInfo.eventDate ? formatDate(uniformInfo.eventDate) : (isIssued ? 'Various' : null);
+
+        const row1 = `Date: ${dateStr}    For: ${forStr}`;
+        const row2 = `Party: ${partyStr}${eventDateStr ? `    Event-Date: ${eventDateStr}` : ''}`;
+        doc.text(row1, pageMargin, 15);
+        doc.text(row2, pageMargin, 19.5);
+        const currentY = 24;
+
+        // Yield slightly so UI updates
+        await new Promise(r => setTimeout(r, 20));
+
+        autoTable(doc, {
+          startY: currentY,
+          columns: reportColumns,
+          body: body,
+          foot: [footRow],
+          theme: 'grid',
+          columnStyles: colStyles,
+          headStyles: {
+            fillColor: [109, 40, 217],
+            textColor: 255,
+            fontSize: 7.0,
+            fontStyle: 'bold',
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 },
+            overflow: 'linebreak'
+          },
+          footStyles: {
+            fillColor: [237, 233, 254],
+            textColor: [88, 28, 135],
+            fontSize: 7.5,
+            fontStyle: 'bold',
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 }
+          },
+          styles: {
+            fontSize: 7.5,
+            cellPadding: { top: 0.9, bottom: 0.9, left: 0.4, right: 0.4 },
+            halign: 'center',
+            valign: 'middle',
+            overflow: 'linebreak',
+            minCellHeight: 5.2
+          },
+          alternateRowStyles: { fillColor: [249, 250, 251] },
+          margin: { top: 12, right: pageMargin, bottom: 14, left: pageMargin },
+          willDrawCell: (data) => {
+            if (data.column.dataKey === 'image' && data.cell.section === 'body') data.cell.text = [];
+          },
+          didDrawCell: (data) => {
+            if (data.column.dataKey === 'image' && data.cell.section === 'body') {
+              const url = imageUrlMap[data.row.index];
+              if (url) {
+                const dispUrl = getDisplayableImageUrl(url);
+                const b64 = imageMap[dispUrl] || imageMap[url];
+                if (b64) {
+                  const imgSize = Math.min(data.cell.width - 1, data.cell.height - 1, 4.8);
+                  const x = data.cell.x + (data.cell.width - imgSize) / 2;
+                  const y = data.cell.y + (data.cell.height - imgSize) / 2;
+                  try {
+                    doc.addImage(b64, 'JPEG', x, y, imgSize, imgSize);
+                  } catch {
+                    try { doc.addImage(b64, x, y, imgSize, imgSize); } catch { /* ignore */ }
+                  }
+                }
+              }
+            }
+          },
+          didDrawPage: function () {
+            const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
+            doc.setFontSize(7.5);
+            doc.setTextColor(120);
+            doc.text(`Page ${pageNumber} of {total_pages_count_string}`, doc.internal.pageSize.width - pageMargin, doc.internal.pageSize.height - 5, { align: 'right' });
+          }
+        });
+
+        if (typeof doc.putTotalPages === 'function') doc.putTotalPages('{total_pages_count_string}');
+
+        doc.save(`${isIssued ? 'Issued' : 'Return'}_History_${new Date().toISOString().split('T')[0]}.pdf`);
+        showToast('Report generated successfully');
+      } catch (err) {
+        console.error("History Report PDF Error:", err);
+        showToast('Failed to generate report', 'error');
+      } finally {
+        setIsReportGenerating(false);
+      }
+    }, 50);
+  };
+
+  return (
+    <AdminLayout>
+      <div className="min-h-[calc(100vh-42px)] bg-[#f0f2f8] font-sans flex flex-col overflow-hidden">
+        {toast.show && (
+          <div className={`fixed bottom-8 right-8 px-6 py-4 rounded-3xl shadow-2xl z-[200] transition-all duration-300 transform animate-in slide-in-from-right-8 ${toast.type === "success" ? "bg-violet-600 text-white shadow-violet-200" : "bg-red-600 text-white shadow-red-200"}`}>
+            <div className="flex items-center gap-3 font-sans"><span className="text-[10px] font-black uppercase tracking-widest">{toast.message}</span></div>
+          </div>
+        )}
+
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-3 sm:px-8 pt-4 sm:pt-6 pb-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <h1 className="text-xl sm:text-3xl font-bold text-slate-800 tracking-tight">Inventory Management</h1>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isSubmitting}
+                className="h-10 px-4 sm:px-6 rounded-lg flex items-center gap-2 text-xs sm:text-sm font-bold transition-all shadow-lg animate-in fade-in zoom-in-95 bg-rose-600 text-white hover:bg-rose-700 shadow-rose-100/50 active:scale-95 disabled:opacity-55"
+              >
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete ({selectedIds.size})
+              </button>
+            )}
+            {Object.keys(editDataMap).length > 0 && (
+              <button
+                onClick={handleBatchSubmit}
+                disabled={isSubmitting || changedRowsCount === 0}
+                className={`h-10 px-4 sm:px-6 rounded-lg flex items-center gap-2 text-xs sm:text-sm font-bold transition-all shadow-lg animate-in fade-in zoom-in-95 ${changedRowsCount > 0
+                    ? "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100"
+                    : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                  }`}
+              >
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Submit {changedRowsCount} {changedRowsCount === 1 ? 'Change' : 'Changes'}
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <div
+              onClick={() => setShowFullTotal(!showFullTotal)}
+              className="flex items-center h-10 px-3 sm:px-4 bg-emerald-600 text-white rounded-lg shadow-sm animate-in fade-in slide-in-from-right-4 duration-500 cursor-pointer hover:bg-emerald-700 transition-all select-none"
+              title={showFullTotal ? "Click to see short format" : "Click to see exact amount"}
+            >
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-80 mr-2 sm:mr-3">
+                {activeTab === 'issued' ? 'Issue Amount:' : 'Return Amount:'}
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-white">
+                ₹{showFullTotal
+                  ? totalInventoryCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : formatIndianAmount(totalInventoryCost)
+                }
+              </span>
+            </div>
+            <button onClick={() => { setIsIssueModalOpen(true); setImagePreview(null); setSelectedImage(null); }} className="h-10 px-3.5 sm:px-5 bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white rounded-lg flex items-center gap-2 text-xs sm:text-sm font-semibold hover:opacity-90 transition-all shadow-lg shadow-violet-100">
+              <ClipboardList className="h-4 w-4 text-white/70" /> Issue Form
+            </button>
+            <button onClick={() => { setIsReturnModalOpen(true); setImagePreview(null); setSelectedImage(null); }} className="h-10 px-3.5 sm:px-5 bg-white border border-fuchsia-200 text-fuchsia-600 rounded-lg flex items-center gap-2 text-xs sm:text-sm font-semibold hover:bg-fuchsia-50 transition-all shadow-sm">
+              <ArrowLeftRight className="h-4 w-4 text-fuchsia-400" /> Return Form
+            </button>
+            {activeTab === 'return' && (
+              <button
+                onClick={handleGenerateReport}
+                disabled={isReportGenerating}
+                className={`h-10 px-3.5 sm:px-5 bg-gradient-to-r from-indigo-600 to-violet-500 text-white rounded-lg flex items-center gap-2 text-xs sm:text-sm font-semibold transition-all shadow-lg shadow-indigo-100 ${isReportGenerating ? 'opacity-70 cursor-not-allowed' : 'hover:opacity-90'}`}
+              >
+                {isReportGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-white/70" />}
+                Return Report
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mx-2 sm:mx-6 mb-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col flex-1 min-h-0 relative">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-100/50 rounded-t-xl">
+            <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl shadow-inner-sm self-start lg:self-auto">
+              <button onClick={() => setActiveTab('issued')} className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'issued' ? 'bg-white text-fuchsia-600 shadow-xl shadow-fuchsia-100/50 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>Issued History</button>
+              <button onClick={() => setActiveTab('return')} className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'return' ? 'bg-white text-fuchsia-600 shadow-xl shadow-fuchsia-100/50 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>Return History</button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <div className="relative group w-full sm:w-48">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-focus-within:text-violet-500 transition-colors" />
+                  <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search..." className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-bold focus:outline-none focus:ring-4 focus:ring-violet-500/10 focus:bg-white w-full transition-all" />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-50 rounded-2xl border border-slate-100 max-w-full">
+                  {activeTab === 'issued' ? (
+                    <>
+                      <select value={issuedFilterParty} onChange={(e) => setIssuedFilterParty(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
+                        <option value="">All Party</option>
+                        {issuedOptions.parties.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                      <select value={issuedFilterItem} onChange={(e) => setIssuedFilterItem(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
+                        <option value="">All Items</option>
+                        {issuedOptions.items.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <select value={returnFilterParty} onChange={(e) => setReturnFilterParty(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
+                        <option value="">All Party</option>
+                        {returnOptions.parties.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                      <select value={returnFilterItem} onChange={(e) => setReturnFilterItem(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
+                        <option value="">All Items</option>
+                        {returnOptions.items.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </>
+                  )}
+                  <div className="relative border-l border-slate-200 ml-0.5 pl-1">
+                    <button
+                      onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}
+                      className={`h-8 px-2.5 sm:px-3 rounded-xl border border-slate-100 flex items-center gap-1.5 text-[10px] font-bold tracking-wider transition-all ${isDateMenuOpen || (activeTab === 'issued' ? (issuedStartDate || issuedEndDate) : (returnStartDate || returnEndDate)) ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200' : 'bg-slate-50 text-slate-600 hover:bg-white'}`}
+                    >
+                      <Calendar className={`h-3 w-3 ${isDateMenuOpen || (activeTab === 'issued' ? (issuedStartDate || issuedEndDate) : (returnStartDate || returnEndDate)) ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{activeTab === 'issued' ? (issuedStartDate || issuedEndDate ? `${issuedStartDate || '...'} - ${issuedEndDate || '...'}` : 'DATE') : (returnStartDate || returnEndDate ? `${returnStartDate || '...'} - ${returnEndDate || '...'}` : 'DATE')}</span>
+                      <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${isDateMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isDateMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-[140]" onClick={() => setIsDateMenuOpen(false)} />
+                        <div className="absolute top-10 right-0 z-[160] w-64 bg-white border border-slate-100 rounded-2xl shadow-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeTab === 'issued' ? 'Issued History' : 'Return History'}</p>
+                            {(activeTab === 'issued' ? (issuedStartDate || issuedEndDate) : (returnStartDate || returnEndDate)) && (
+                              <button
+                                onClick={() => { if (activeTab === 'issued') { setIssuedStartDate(""); setIssuedEndDate(""); } else { setReturnStartDate(""); setReturnEndDate(""); } }}
+                                className="text-[9px] font-bold text-red-500 hover:text-red-600 uppercase tracking-tighter"
+                              >
+                                Clear Dates
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">From</label>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                                <input
+                                  type="date"
+                                  value={activeTab === 'issued' ? issuedStartDate : returnStartDate}
+                                  onChange={(e) => activeTab === 'issued' ? setIssuedStartDate(e.target.value) : setReturnStartDate(e.target.value)}
+                                  className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/10"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">To</label>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                                <input
+                                  type="date"
+                                  value={activeTab === 'issued' ? issuedEndDate : returnEndDate}
+                                  onChange={(e) => activeTab === 'issued' ? setIssuedEndDate(e.target.value) : setReturnEndDate(e.target.value)}
+                                  className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/10"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setIsDateMenuOpen(false)}
+                            className="w-full mt-4 py-2 bg-violet-600 text-white text-[10px] font-bold rounded-xl shadow-lg shadow-violet-100 hover:bg-violet-700 transition-all uppercase tracking-widest"
+                          >
+                            Apply Filter
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {((activeTab === 'issued' ? (issuedFilterItem || issuedFilterType || issuedFilterParty || issuedStartDate || issuedEndDate) : (returnFilterItem || returnFilterType || returnFilterParty || returnStartDate || returnEndDate)) || searchTerm) && (
+                    <button
+                      onClick={() => {
+                        if (activeTab === 'issued') { setIssuedFilterItem(""); setIssuedFilterType(""); setIssuedFilterParty(""); setIssuedStartDate(""); setIssuedEndDate(""); }
+                        else { setReturnFilterItem(""); setReturnFilterType(""); setReturnFilterParty(""); setReturnStartDate(""); setReturnEndDate(""); }
+                        setSearchTerm("");
+                      }}
+                      className="p-1 ml-1 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-lg transition-colors border-l border-slate-100 pl-2"
+                      title="Clear All Filters"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="relative">
+                <button onClick={() => setIsColMenuOpen(!isColMenuOpen)} className={`h-8 px-3 rounded-xl border border-slate-100 flex items-center gap-2 text-[10px] font-bold tracking-wider transition-all ${isColMenuOpen ? 'bg-violet-600 text-white shadow-lg' : 'bg-slate-50 text-slate-600 hover:bg-white'}`}>
+                  <Settings2 className="h-3 w-3" /> Column <ChevronDown className={`h-3 w-3 transition-transform ${isColMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isColMenuOpen && (
+                  <div className="absolute top-12 right-0 z-[100] w-48 bg-white border border-slate-100 rounded-2xl shadow-2xl p-3 animate-in fade-in slide-in-from-top-3">
+                    <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Visibility</p><button onClick={() => setIsColMenuOpen(false)}><X className="h-4 w-4 text-slate-300" /></button></div>
+                    <div className="grid grid-cols-1 gap-1 max-h-[40vh] overflow-y-auto pr-1">
+                      {columnConfig.filter(c => c.key !== 'actions').map(col => (
+                        <button key={col.key} onClick={() => setVisibleColumns(prev => ({ ...prev, [col.key]: !prev[col.key] }))} className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all text-xs font-semibold ${visibleColumns[col.key] ? 'bg-violet-600 text-white shadow-lg shadow-violet-200' : 'text-slate-500 hover:bg-slate-50'}`}>
+                          <span>{col.label}</span> {visibleColumns[col.key] ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {activeTab === 'issued' && shouldGroup && !selectedPartyCard ? (
+            <div className="flex-1 overflow-auto custom-scrollbar flex flex-col min-h-0">
+              {isTableLoading ? (
+                <div className="py-32 text-center flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="h-10 w-10 animate-spin text-violet-600" />
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading Party Cards...</p>
+                </div>
+              ) : groupedIssuedData.length === 0 ? (
+                <div className="py-32 text-center text-slate-350 flex flex-col items-center justify-center">
+                  <Database className="h-16 w-16 mx-auto mb-4 opacity-20 text-slate-400" />
+                  <p className="text-sm font-bold uppercase tracking-widest text-slate-400">No records found</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-auto custom-scrollbar p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
+                      {groupedIssuedData
+                        .slice((partyGroupPage - 1) * PAGE_SIZE, partyGroupPage * PAGE_SIZE)
+                        .map((group, idx) => (
+                          <PartyCard
+                            key={idx}
+                            partyName={group.partyName}
+                            eventDate={group.latestDate}
+                            totalQty={group.totalQty}
+                            totalCost={group.totalCost}
+                            isDownloading={generatingReportParty === group.partyName}
+                            onDownloadReport={() => handleGeneratePartyReport(group.partyName, group.rows)}
+                            onClick={() => setSelectedPartyCard(group.partyName)}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                  <Pagination
+                    currentPage={partyGroupPage}
+                    totalCount={groupedIssuedData.length}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setPartyGroupPage}
+                    isLoading={isTableLoading}
+                  />
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0">
+              {activeTab === 'issued' && shouldGroup && selectedPartyCard && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-4 bg-white border-b border-slate-100/80 shrink-0 animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setSelectedPartyCard(null)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold text-violet-600 border border-slate-200/50 hover:border-slate-200 transition-all select-none"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" /> Back to Parties
+                    </button>
+                    <button
+                      onClick={handleGenerateReport}
+                      disabled={isReportGenerating}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-100/50 hover:scale-[1.02] active:scale-95 select-none disabled:opacity-75"
+                    >
+                      {isReportGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Download Report
+                    </button>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500 truncate max-w-full">
+                    Showing records for: <strong className="text-slate-800">{selectedPartyCard}</strong>
+                  </span>
+                </div>
+              )}
+
+              <div className="max-h-[65vh] overflow-x-auto overflow-y-auto relative custom-scrollbar">
+                <table className="w-full text-center border-collapse border-separate border-spacing-0 min-w-[650px]">
+                  <thead className="sticky top-0 z-20 bg-violet-50">
+                    <tr className="bg-violet-50">
+                      <th className="px-4 py-4 w-12 text-center bg-violet-50 border-b border-violet-100">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-violet-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                          checked={
+                            (activeTab === 'issued' && shouldGroup && selectedPartyCard)
+                              ? (groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows?.length > 0 && selectedIds.size === groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows?.length)
+                              : (getFilteredHistory().length > 0 && selectedIds.size === getFilteredHistory().length)
+                          }
+                          onChange={() =>
+                            (activeTab === 'issued' && shouldGroup && selectedPartyCard)
+                              ? handleSelectAll(groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows || [])
+                              : handleSelectAll(getFilteredHistory())
+                          }
+                        />
+                      </th>
+                      {columnConfig.map(col => visibleColumns[col.key] !== false && (
+                        <th key={col.key} className={`px-6 py-4 text-[10px] font-bold text-violet-600 uppercase tracking-[0.15em] bg-violet-50 border-b border-violet-100 text-center ${['date', 'eventDate', 'returnDate'].includes(col.key) ? 'min-w-[120px]' : ''}`}>{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {isTableLoading ? (
+                      <tr><td colSpan={columnConfig.length + 1} className="py-20 text-center"><div className="flex flex-col items-center gap-3"><Loader2 className="h-10 w-10 animate-spin text-violet-200" /><p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Loading Records...</p></div></td></tr>
+                    ) : getFilteredHistory().length === 0 ? (
+                      <tr><td colSpan={columnConfig.length + 1} className="py-32 text-center text-slate-300"><Database className="h-12 w-12 mx-auto mb-4 opacity-10" /><p className="text-xs font-bold uppercase tracking-widest">No history found</p></td></tr>
+                    ) : (activeTab === 'issued' && shouldGroup && selectedPartyCard) ? (
+                      (() => {
+                        const partyGroup = groupedIssuedData.find(g => g.partyName === selectedPartyCard);
+                        const displayRows = partyGroup ? partyGroup.rows : [];
+                        const paginatedPartyDetailRows = displayRows.slice((partyDetailPage - 1) * PAGE_SIZE, partyDetailPage * PAGE_SIZE);
+                        return paginatedPartyDetailRows.map((row) => {
+                          const isSelected = selectedIds.has(row.id);
+                          const currentData = editDataMap[row.id] || row;
+
+                          return (
+                            <tr key={row.id} className={`transition-all font-sans border-b border-slate-50 last:border-0 ${isSelected ? 'bg-violet-50/50' : 'hover:bg-slate-50/50'}`}>
+                              <td className="px-4 py-3 text-center">
+                                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelection(row)} />
+                              </td>
+                              {columnConfig.map(col => visibleColumns[col.key] !== false && (
+                                <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
+                                  {isSelected && col.key === 'qty' ? (
+                                    <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                  ) : col.key === 'date' ? (
+                                    <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData.createdAt)}</span>
+                                  ) : col.key === 'eventDate' ? (
+                                    <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData.eventDate)}</span>
+                                  ) : col.key === 'item' ? (
+                                    <span className="font-bold text-slate-800">{currentData.itemName}</span>
+                                  ) : col.key === 'type' ? (
+                                    currentData.inventoryType || '-'
+                                  ) : col.key === 'party' ? (
+                                    currentData.partyName || '-'
+                                  ) : col.key === 'for' ? (
+                                    currentData.forType || '-'
+                                  ) : col.key === 'eventType' ? (
+                                    currentData.eventType || '-'
+                                  ) : col.key === 'dishes' ? (
+                                    currentData.dishes || '-'
+                                  ) : col.key === 'estimatedCost' ? (
+                                    <span className="font-bold text-emerald-600">₹{parseFloat(currentData.estimatedCost || 0).toFixed(2)}</span>
+                                  ) : col.key === 'actions' ? (
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        onClick={() => activeTab === 'issued' ? handleEditIssue(currentData) : handleEditReturn(currentData)}
+                                        className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
+                                        title="Edit Record"
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteSingleRecord(currentData)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                        title="Delete Record"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  ) : col.key === 'image' ? (
+                                    currentData.imageUrl && currentData.imageUrl !== 'No Image' ? (
+                                      <div className="relative flex justify-center group/img">
+                                        <a href={currentData.imageUrl} target="_blank" rel="noopener noreferrer" className="h-10 w-10 rounded-lg overflow-hidden border border-slate-100 flex items-center justify-center bg-slate-50 group-hover:scale-110 transition-transform">
+                                          <img src={getDisplayableImageUrl(currentData.imageUrl)} alt="Item" className="h-full w-full object-cover" />
+                                        </a>
+                                      </div>
+                                    ) : <EyeOff className="h-4 w-4 opacity-10 mx-auto text-slate-200" />
+                                  ) : currentData[col.key] || '-'}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        });
+                      })()
+                    ) : shouldGroup ? (
+                      <tr><td colSpan={columnConfig.length + 1} className="py-20 text-center"><p className="text-xs font-bold uppercase tracking-widest text-slate-350">Choose a party card above</p></td></tr>
+                    ) : (
+                      (() => {
+                        const currentFiltered = getFilteredHistory();
+                        const activeCurrentPage = activeTab === 'issued' ? issuePage : returnPage;
+                        const paginatedRows = currentFiltered.slice((activeCurrentPage - 1) * PAGE_SIZE, activeCurrentPage * PAGE_SIZE);
+                        return paginatedRows.map((row) => {
+                          const isSelected = selectedIds.has(row.id);
+                          const currentData = editDataMap[row.id] || row;
+
+                          return (
+                            <tr key={row.id} className={`transition-all font-sans border-b border-slate-50 last:border-0 ${isSelected ? 'bg-violet-50/50' : 'hover:bg-slate-50/50'}`}>
+                              <td className="px-4 py-3 text-center">
+                                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelection(row)} />
+                              </td>
+                              {columnConfig.map(col => visibleColumns[col.key] !== false && (
+                                <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
+                                  {isSelected && activeTab === 'issued' && col.key === 'qty' ? (
+                                    <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                  ) : isSelected && activeTab === 'return' && col.key === 'qty' ? (
+                                    <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                  ) : isSelected && activeTab === 'return' && col.key === 'damage' ? (
+                                    isConsumableType(currentData.inventoryType) ? (
+                                      <span className="text-slate-350 italic">-</span>
+                                    ) : (
+                                      <input type="number" value={currentData.damage} onChange={(e) => handleInlineEdit(row.id, 'damage', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                    )
+                                  ) : isSelected && activeTab === 'return' && col.key === 'missing' ? (
+                                    isConsumableType(currentData.inventoryType) ? (
+                                      <span className="text-slate-350 italic">-</span>
+                                    ) : (
+                                      <input type="number" value={currentData.missing} onChange={(e) => handleInlineEdit(row.id, 'missing', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                    )
+                                  ) : col.key === 'actions' ? (
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        onClick={() => activeTab === 'issued' ? handleEditIssue(currentData) : handleEditReturn(currentData)}
+                                        className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
+                                        title="Edit Record"
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteSingleRecord(currentData)}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                        title="Delete Record"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  ) : col.key === 'date' ? (
+                                    <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData.createdAt)}</span>
+                                  ) : col.key === 'eventDate' || col.key === 'returnDate' ? (
+                                    <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData[col.key])}</span>
+                                  ) : col.key === 'damage' ? (
+                                    isConsumableType(currentData.inventoryType) ? (
+                                      <span className="text-slate-350 italic">-</span>
+                                    ) : (
+                                      <span className="text-red-500 font-bold">{currentData.damage}</span>
+                                    )
+                                  ) : col.key === 'missing' ? (
+                                    isConsumableType(currentData.inventoryType) ? (
+                                      <span className="text-slate-350 italic">-</span>
+                                    ) : (
+                                      <span className="text-orange-500 font-bold">{currentData.missing}</span>
+                                    )
+                                  ) : col.key === 'issueQty' ? (
+                                    <span className="font-bold text-slate-700">{currentData.issueQty != null ? currentData.issueQty : '-'}</span>
+                                  ) : col.key === 'notReturned' ? (
+                                    (() => {
+                                      if (isConsumableType(currentData.inventoryType)) {
+                                        const consumedVal = currentData.consumed != null
+                                          ? Number(currentData.consumed)
+                                          : Math.max(0, Number(currentData.issueQty || 0) - Number(currentData.qty || 0));
+                                        return (
+                                          <span className="font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 text-[11px] whitespace-nowrap" title="Consumed at event">
+                                            {consumedVal} consumed
+                                          </span>
+                                        );
+                                      }
+                                      const val = (Number(currentData.damage || 0) + Number(currentData.missing || 0));
+                                      return <span className={`font-bold ${val > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{val}</span>;
+                                    })()
+                                  ) : col.key === 'item' ? (
+                                    <span className="font-bold text-slate-800">{currentData.itemName}</span>
+                                  ) : col.key === 'type' ? (
+                                    currentData.inventoryType || '-'
+                                  ) : col.key === 'party' ? (
+                                    currentData.partyName || '-'
+                                  ) : col.key === 'for' ? (
+                                    currentData.forType || '-'
+                                  ) : col.key === 'estimatedCost' ? (
+                                    <span className="font-bold text-emerald-600">₹{parseFloat(currentData.estimatedCost || 0).toFixed(2)}</span>
+                                  ) : col.key === 'totalCost' ? (
+                                    <span className="font-bold text-emerald-600">₹{parseFloat(currentData.totalCost || 0).toFixed(2)}</span>
+                                  ) : col.key === 'image' ? (
+                                    currentData.imageUrl && currentData.imageUrl !== 'No Image' ? (
+                                      <div className="relative flex justify-center group/img">
+                                        <a href={currentData.imageUrl} target="_blank" rel="noopener noreferrer" className="h-10 w-10 rounded-lg overflow-hidden border border-slate-100 flex items-center justify-center bg-slate-50 group-hover:scale-110 transition-transform">
+                                          <img src={getDisplayableImageUrl(currentData.imageUrl)} alt="Item" className="h-full w-full object-cover" />
+                                        </a>
+                                      </div>
+                                    ) : <EyeOff className="h-4 w-4 opacity-10 mx-auto text-slate-200" />
+                                  ) : currentData[col.key] || '-'}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        });
+                      })()
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {activeTab === 'issued' && shouldGroup && selectedPartyCard ? (
+                <Pagination
+                  currentPage={partyDetailPage}
+                  totalCount={groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows?.length || 0}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setPartyDetailPage}
+                  isLoading={isTableLoading}
+                />
+              ) : (
+                <Pagination
+                  currentPage={activeTab === 'issued' ? issuePage : returnPage}
+                  totalCount={getFilteredHistory().length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={activeTab === 'issued' ? setIssuePage : setReturnPage}
+                  isLoading={isTableLoading}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* MODALS */}
+        {(isIssueModalOpen || isReturnModalOpen) && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-6 backdrop-blur-sm bg-slate-900/40 animate-in fade-in duration-300 overflow-y-auto">
+            <div className="relative w-full max-w-4xl bg-white rounded-2xl sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 my-auto max-h-[90vh] flex flex-col">
+              <div className="px-4 sm:px-8 py-4 sm:py-6 border-b border-slate-100 flex items-center justify-between sticky top-0 z-10 bg-white shrink-0">
+                <h2 className="text-base sm:text-xl font-bold text-slate-800 flex items-center gap-2 sm:gap-3">
+                  <div className={`p-2 rounded-xl ${isIssueModalOpen ? 'bg-violet-100 text-violet-600' : 'bg-fuchsia-100 text-fuchsia-600'}`}>
+                    {isIssueModalOpen ? <ClipboardList className="h-5 w-5" /> : <ArrowLeftRight className="h-5 w-5" />}
+                  </div>
+                  {isEditing ? (isIssueModalOpen ? 'Edit Issue Record' : 'Edit Return Record') : (isIssueModalOpen ? 'Issue Items to Party' : 'Return Items from Party')}
+                </h2>
+                <button onClick={() => { setIsIssueModalOpen(false); setIsReturnModalOpen(false); setIsEditing(false); setEditingIssueId(null); setEditingReturnId(null); }} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 transition-all font-sans"><X className="h-5 w-5" /></button>
+              </div>
+
+              <form onSubmit={isIssueModalOpen ? handleIssueSubmit : handleReturnSubmit} className="px-4 sm:px-7 py-4 sm:py-5 space-y-4 flex-1 overflow-y-auto custom-scrollbar font-sans">
+
+                {isIssueModalOpen && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-violet-600 uppercase tracking-wide">For *</label>
+                      <SearchableSelect
+                        value={issueForm.forType}
+                        onChange={(val) => {
+                          setIssueForm(p => ({
+                            ...p,
+                            forType: val
+                          }));
+                        }}
+                        options={["Rent", "H3"]}
+                        searchable={false}
+                        allowClear={false}
+                        size="form"
+                        buttonClassName="bg-violet-50/40 border-2 border-violet-200 text-violet-700 font-bold"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Issuer *</label>
+                      <SearchableSelect
+                        value={issueForm.issuer}
+                        onChange={(val) => setIssueForm(p => ({ ...p, issuer: val }))}
+                        options={dropdownOptions.issuerOptions || []}
+                        placeholder="Type or select..."
+                        searchPlaceholder="Search or type issuer..."
+                        creatable={true}
+                        size="form"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Inventory Type *</label>
+                      <SearchableSelect
+                        value={issueForm.inventoryType}
+                        onChange={(val) => setIssueForm(p => ({ ...p, inventoryType: val, itemsName: '', itemId: '' }))}
+                        options={returnInvTypeOptions}
+                        placeholder="Select type"
+                        searchPlaceholder="Search type..."
+                        size="form"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Item Name *</label>
+                      <SearchableSelect
+                        value={issueForm.itemsName}
+                        onChange={(val) => {
+                          const item = items.find(i => i.item_name === val && i.inventory_type === issueForm.inventoryType);
+                          if (item) {
+                            const stock = itemStockMap[item.id];
+                            setIssueForm(prev => ({
+                              ...prev,
+                              itemsName: val,
+                              itemId: item.id,
+                              department: item.department,
+                              openingBalance: stock?.current_stock ?? 0,
+                              perUnit: resolveRentingRate(item),
+                              unit: resolveDamageRate(item),
+                              imageUrl: item.image_url || stock?.image_url || ''
+                            }));
+                            const img = item.image_url || stock?.image_url;
+                            if (img) setImagePreview(getDisplayableImageUrl(img));
+                          } else {
+                            setIssueForm(prev => ({
+                              ...prev,
+                              itemsName: val,
+                              itemId: '',
+                              department: '',
+                              openingBalance: 0,
+                              imageUrl: ''
+                            }));
+                            setImagePreview(null);
+                          }
+                        }}
+                        options={filteredItems}
+                        placeholder={issueForm.inventoryType ? "Select item name" : "Select type first"}
+                        searchPlaceholder="Search item name..."
+                        disabled={!issueForm.inventoryType}
+                        size="form"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isReturnModalOpen && isEditing && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Party Name</label>
+                      <div className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-sm font-medium text-slate-500">{returnForm.partyName || '-'}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Inventory Type</label>
+                      <div className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-sm font-medium text-slate-500">{returnForm.inventoryType || '-'}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Item Name</label>
+                      <div className="w-full h-11 px-4 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-sm font-medium text-slate-500">{returnForm.itemsName || '-'}</div>
+                    </div>
+                  </div>
+                )}
+
+                {isReturnModalOpen && !isEditing && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Party Name *</label>
+                      <SearchableSelect
+                        value={returnForm.partyName}
+                        onChange={(val) => {
+                          setReturnForm(p => ({ ...p, partyName: val, inventoryType: '', itemsName: '', itemId: '' }));
+                        }}
+                        options={uniquePartyOptions}
+                        placeholder="e.g. 6TH SEPTEMBER"
+                        searchPlaceholder="Search party..."
+                        size="form"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Inventory Type *</label>
+                      <SearchableSelect
+                        value={returnForm.inventoryType}
+                        onChange={(val) => {
+                          setReturnForm(p => ({ ...p, inventoryType: val, itemsName: '', itemId: '' }));
+                        }}
+                        options={returnInvTypeOptions}
+                        disabled={!returnForm.partyName}
+                        placeholder={returnForm.partyName ? 'Select type...' : 'Select party first'}
+                        searchPlaceholder="Search type..."
+                        emptyMessage="No pending inventory types for this party"
+                        size="form"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Item Name *</label>
+                      <SearchableSelect
+                        value={returnForm.itemsName}
+                        onChange={(val) => {
+                          handleSelectReturnItem(val);
+                        }}
+                        options={returnItemOptions}
+                        disabled={!returnForm.inventoryType || !returnForm.partyName}
+                        placeholder={!returnForm.partyName ? 'Select party first' : !returnForm.inventoryType ? 'Select type first' : 'Select item...'}
+                        searchPlaceholder="Search item..."
+                        emptyMessage="No pending items to return for this party & type"
+                        size="form"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isIssueModalOpen ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 p-3 sm:p-4 bg-slate-50 border border-slate-100 rounded-xl shadow-sm">
+                    {[
+                      { label: 'Department', val: issueForm.department },
+                      { label: 'Opening Bal', val: (issueForm.openingBalance !== undefined && issueForm.openingBalance !== '') ? issueForm.openingBalance : '-' },
+                      { label: 'Last Issue', val: validationState.committed || '0' }
+                    ].map((f, i) => (
+                      <div key={i} className="space-y-1">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block ml-1">{f.label}</label>
+                        <div className="h-10 flex items-center bg-white/50 px-3 rounded-lg border border-slate-200/50 text-xs font-bold text-slate-500 truncate">{f.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {returnForm.itemsName && (
+                      <div className="grid grid-cols-2 gap-4 p-3.5 bg-fuchsia-50/50 border border-fuchsia-100 rounded-xl shadow-sm">
+                        <div className="space-y-1 ml-1">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-fuchsia-400 block">Last Return Date</label>
+                          <div className="text-xs font-black text-fuchsia-700">{lastReturnInfo.date}</div>
+                        </div>
+                        <div className="space-y-1 ml-1">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-fuchsia-400 block">Last Returned Qty</label>
+                          <div className="text-xs font-black text-fuchsia-700">{lastReturnInfo.qty}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isEditing && matchingIssuedRows.length > 0 ? (
+                      <>
+                        <div className="flex items-center justify-between px-2 mb-1">
+                          <div className="flex flex-col">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block ml-1">For (Issue Type)</label>
+                            <div className="text-[11px] font-bold text-slate-700 ml-1">{returnForm.forType || '-'}</div>
+                          </div>
+                          <div className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 uppercase tracking-widest">
+                            {matchingIssuedRows.length}  Events  Combined
+                          </div>
+                        </div>
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                          <table className="w-full text-left text-xs table-fixed">
+                            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                              <tr>
+                                <th className="px-4 py-2.5 border-r border-slate-200/50 w-[20%] text-center">S. No.</th>
+                                <th className="px-4 py-2.5 border-r border-slate-200/50 w-[30%]">Inv. Type</th>
+                                <th className="px-4 py-2.5 border-r border-slate-200/50 w-[30%]">Event Type</th>
+                                <th className="px-4 py-2.5 w-[20%] text-center">Qty</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {matchingIssuedRows.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-4 py-2.5 border-r border-slate-200/50 text-center font-bold text-slate-400 truncate">{row.serial || '-'}</td>
+                                  <td className="px-4 py-2.5 border-r border-slate-200/50 font-bold text-slate-600 truncate">{row.inventoryType || '-'}</td>
+                                  <td className="px-4 py-2.5 border-r border-slate-200/50 font-bold text-slate-700 truncate">{row.eventType || 'Regular'}</td>
+                                  <td className="px-4 py-2.5 text-center font-black text-violet-600">{row.qty}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 border border-slate-100 rounded-xl shadow-sm">
+                        {[
+                          { label: 'Department', val: returnForm.department },
+                          { label: 'Inventory Type', val: returnForm.inventoryType }
+                        ].map((f, i) => (
+                          <div key={i} className="space-y-1.5 flex-1 min-w-[30%]">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block ml-1">{f.label}</label>
+                            <div className="h-10 flex items-center bg-white/50 px-3 rounded-lg border border-slate-200/50 text-xs font-bold text-slate-500 truncate">{f.val}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isIssueModalOpen && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Party Name *</label>
+                        <SearchableSelect
+                          value={issueForm.partyName}
+                          onChange={(val) => handleSelectParty(val)}
+                          options={uniquePartyOptions}
+                          placeholder="Type or select..."
+                          searchPlaceholder="Search or type party..."
+                          creatable={true}
+                          size="form"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Dishes</label>
+                        <input type="text" value={issueForm.dishes} onChange={(e) => setIssueForm(p => ({ ...p, dishes: e.target.value }))} placeholder="Dishes" className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 text-sm font-medium" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Event Date *</label>
+                        <input type="date" value={issueForm.eventDate} onChange={(e) => setIssueForm(p => ({ ...p, eventDate: e.target.value }))} required className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 text-sm font-medium" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Event Type *</label>
+                        <SearchableSelect
+                          value={issueForm.eventTime}
+                          onChange={(val) => setIssueForm(p => ({ ...p, eventTime: val }))}
+                          options={dropdownOptions.eventTimeOptions || []}
+                          placeholder="Select time"
+                          searchPlaceholder="Search event type..."
+                          size="form"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Venue Name</label>
+                        <input type="text" value={issueForm.foodName} onChange={(e) => setIssueForm(p => ({ ...p, foodName: e.target.value }))} placeholder="Enter venue..." className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 text-sm font-medium" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-violet-600 uppercase tracking-wide">Issue Quantity *</label>
+                        <input
+                          type="number"
+                          onWheel={(e) => e.target.blur()}
+                          value={issueForm.issueData}
+                          onChange={(e) => setIssueForm(p => ({ ...p, issueData: e.target.value }))}
+                          required
+                          placeholder="0"
+                          className={`w-full h-11 px-4 rounded-lg border-2 outline-none text-sm font-bold transition-all ${validationState.isOver ? 'border-red-500 bg-red-50 text-red-700' : 'border-violet-100 focus:border-violet-500 text-violet-700 bg-violet-50/20'}`}
+                        />
+                        {validationState.isOver && (
+                          <div className="absolute z-10 w-full">
+                            <p className="text-[10px] text-red-600 font-black mt-2 animate-pulse px-1 flex items-center gap-2 uppercase tracking-widest bg-red-50 py-1.5 rounded-md border border-red-100 shadow-xl w-fit whitespace-nowrap">
+                              <Zap className="h-3 w-3 fill-red-600" /> Over Capacity: Only {validationState.availableForThisGroup} units left
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Renting Rate (₹) *</label>
+                        <input
+                          type="number"
+                          onWheel={(e) => e.target.blur()}
+                          step="0.01"
+                          value={issueForm.perUnit}
+                          onChange={(e) => setIssueForm(p => ({ ...p, perUnit: e.target.value }))}
+                          required
+                          placeholder="0.00"
+                          className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 text-sm font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-emerald-600 uppercase tracking-wide">Estimated Cost</label>
+                        <div className="w-full h-11 px-4 rounded-lg border border-emerald-100 bg-emerald-50/30 flex items-center text-sm font-bold text-emerald-700 shadow-sm">
+                          ₹{(Number(issueForm.issueData || 0) * Number(issueForm.perUnit || 0)).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Damage/Missing Rate (₹) *</label>
+                        <input
+                          type="number"
+                          onWheel={(e) => e.target.blur()}
+                          step="0.01"
+                          value={issueForm.unit}
+                          onChange={(e) => setIssueForm(p => ({ ...p, unit: e.target.value }))}
+                          required
+                          placeholder="0.00"
+                          className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 text-sm font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Item-Attachment</label>
+                        <div className="h-11">
+                          <input type="file" id="inventory-upload" onChange={handleImageChange} className="hidden" accept="image/*" />
+                          <label htmlFor="inventory-upload" className="flex items-center justify-between px-3 h-full rounded-lg border border-slate-200 hover:border-violet-400 bg-white cursor-pointer transition-all">
+                            <div className="flex items-center gap-3 truncate">
+                              <UploadCloud className="h-4 w-4 text-slate-300" />
+                              <span className="text-xs font-semibold text-slate-500">{selectedImage ? "New File" : "Upload"}</span>
+                            </div>
+                            <div className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-400 uppercase tracking-tighter shrink-0">Browse</div>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Preview</label>
+                        <div className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm h-28 flex items-center justify-center">
+                          {imagePreview ? (
+                            <div className="relative group rounded-lg overflow-hidden bg-slate-50 h-full w-full">
+                              <img src={imagePreview} alt="Preview" className="w-full h-full object-contain" />
+                              <button type="button" onClick={() => { setImagePreview(null); setSelectedImage(null); }} className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-lg transition-all opacity-0 group-hover:opacity-100"><X className="h-3 w-3" /></button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1 opacity-20">
+                              <UploadCloud className="h-6 w-6" />
+                              <span className="text-[10px] font-bold uppercase tracking-widest">No Image</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Remarks</label>
+                        <textarea value={issueForm.remarks} onChange={(e) => setIssueForm(p => ({ ...p, remarks: e.target.value }))} placeholder="Add any internal remarks..." className="w-full px-4 py-3 rounded-lg border border-slate-200 h-28 resize-none shadow-sm focus:border-violet-500 outline-none text-sm font-medium" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isReturnModalOpen && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div className="space-y-1"><label className="text-xs font-bold text-fuchsia-600 uppercase tracking-wide">Return Date *</label><input type="date" value={returnForm.returnDate} onChange={(e) => setReturnForm(p => ({ ...p, returnDate: e.target.value }))} required className="w-full h-11 px-4 rounded-lg border-2 border-fuchsia-100 focus:border-fuchsia-500 text-sm font-medium" /></div>
+                      <div className="space-y-1"><label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Issue Quantity</label><div className="h-11 flex items-center bg-slate-50/50 px-4 rounded-lg border border-slate-200 text-sm font-bold text-slate-400 italic">{returnForm.issueQty || '0'}</div></div>
+                    </div>
+
+                    {isConsumableType(returnForm.inventoryType) ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-violet-700 uppercase tracking-wide flex items-center justify-between">
+                              <span>Remaining Qty (Unused / Returned) *</span>
+                              <span className="text-[10px] text-slate-400 font-normal">Back to godown</span>
+                            </label>
+                            <input
+                              type="number"
+                              onWheel={(e) => e.target.blur()}
+                              value={returnForm.remainingQty}
+                              onChange={(e) => setReturnForm(p => ({ ...p, remainingQty: e.target.value }))}
+                              required
+                              min="0"
+                              max={returnForm.issueQty || '0'}
+                              placeholder="0"
+                              className={`w-full h-11 px-4 rounded-lg border-2 text-sm font-bold transition-all ${
+                                Number(returnForm.remainingQty || 0) > Number(returnForm.issueQty || 0)
+                                  ? 'border-red-400 bg-red-50 text-red-700'
+                                  : 'border-violet-200 focus:border-violet-500 text-violet-800 bg-violet-50/20'
+                              }`}
+                            />
+                            {Number(returnForm.remainingQty || 0) > Number(returnForm.issueQty || 0) && (
+                              <p className="text-[10px] font-bold text-red-600 mt-1">Remaining cannot exceed issued quantity ({returnForm.issueQty || 0})</p>
+                            )}
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-amber-600 uppercase tracking-wide flex items-center justify-between">
+                              <span>Consumed Qty (Used at Event)</span>
+                              <span className="text-[10px] text-amber-500 font-semibold">Auto-calculated</span>
+                            </label>
+                            <div className="h-11 flex items-center justify-between bg-amber-50/60 px-4 rounded-lg border border-amber-200 text-sm font-black text-amber-800">
+                              <span>{returnForm.consumedQty || '0'}</span>
+                              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-200/60 text-amber-900">
+                                Consumed
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wide">Unit / Renting Rate (₹)</label>
+                            <div className="h-11 flex items-center bg-slate-50/50 px-4 rounded-lg border border-slate-200 text-sm font-bold text-slate-400 italic">
+                              ₹{returnForm.rentingRate || '0.00'}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-emerald-600 uppercase tracking-wide">Total Consumption Cost (₹)</label>
+                            <div className="h-11 flex items-center bg-emerald-50 px-4 rounded-lg border border-emerald-200 text-sm font-black text-emerald-700 shadow-inner-sm">
+                              ₹{returnForm.totalCost || '0.00'}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                          <div className="space-y-1"><label className="text-xs font-bold text-red-500 uppercase tracking-wide">Damage *</label><input type="number" onWheel={(e) => e.target.blur()} value={returnForm.damageItems} onChange={(e) => setReturnForm(p => ({ ...p, damageItems: e.target.value }))} required className="w-full h-11 px-4 rounded-lg border border-red-100 focus:border-red-500 text-sm font-medium text-red-700 bg-red-50/20" /></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-orange-500 uppercase tracking-wide">Missing *</label><input type="number" onWheel={(e) => e.target.blur()} value={returnForm.missingItems} onChange={(e) => setReturnForm(p => ({ ...p, missingItems: e.target.value }))} required className="w-full h-11 px-4 rounded-lg border border-orange-100 focus:border-orange-500 text-sm font-medium text-orange-700 bg-orange-50/20" /></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-400 uppercase tracking-wide">Damage Rate (₹)</label><div className="h-11 flex items-center bg-slate-50/50 px-4 rounded-lg border border-slate-200 text-sm font-bold text-slate-400 italic">{returnForm.damageRate || '0'}</div></div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                          <div className="space-y-1"><label className="text-xs font-bold text-fuchsia-400 uppercase tracking-wide">Return Qty (Calc)</label><div className="h-11 flex items-center bg-fuchsia-50/10 px-4 rounded-lg border border-fuchsia-100 text-sm font-bold text-fuchsia-400 italic">{returnForm.returnData || '0'}</div></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-400 uppercase tracking-wide">Renting Rate (₹)</label><div className="h-11 flex items-center bg-slate-50/50 px-4 rounded-lg border border-slate-200 text-sm font-bold text-slate-400 italic">{returnForm.rentingRate || '0'}</div></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-emerald-600 uppercase tracking-wide">Total Cost (₹)</label><div className="h-11 flex items-center bg-emerald-50 px-4 rounded-lg border border-emerald-200 text-sm font-black text-emerald-700 shadow-inner-sm">₹{returnForm.totalCost || '0.00'}</div></div>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Image Attachment</label>
+                        <div className="h-11"><input type="file" id="return-upload" onChange={handleImageChange} className="hidden" accept="image/*" /><label htmlFor="return-upload" className="flex items-center justify-between px-3 h-full rounded-lg border border-slate-200 hover:border-fuchsia-400 bg-white cursor-pointer"><div className="flex items-center gap-3 truncate"><UploadCloud className="h-4 w-4 text-slate-300" /><span>{selectedImage ? "New File" : "Upload Image"}</span></div><div className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-400 uppercase tracking-tighter shrink-0">Browse</div></label></div>
+                        {imagePreview && <div className="mt-2 p-2 bg-white border border-slate-100 rounded-xl shadow-sm"><div className="relative group rounded-lg overflow-hidden bg-slate-50 h-48"><img src={imagePreview} alt="Preview" className="w-full h-full object-contain" /><button type="button" onClick={() => { setImagePreview(null); setSelectedImage(null); }} className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-lg transition-all"><X className="h-3.5 w-3.5" /></button></div></div>}
+                      </div>
+                      <div className="space-y-1"><label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Remarks</label><textarea value={returnForm.remarks} onChange={(e) => setReturnForm(p => ({ ...p, remarks: e.target.value }))} placeholder="..." rows="3" className="w-full px-4 py-2 rounded-lg border border-slate-200 h-28 resize-none shadow-sm focus:border-fuchsia-500 outline-none" /></div>
+                    </div>
+                  </>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                  <button type="button" onClick={() => { setIsIssueModalOpen(false); setIsReturnModalOpen(false); setIsEditing(false); setEditingIssueId(null); setEditingReturnId(null); }} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
+                  <button
+                    type="submit"
+                    disabled={
+                      isSubmitting ||
+                      (isIssueModalOpen && validationState.isOver) ||
+                      (isReturnModalOpen && (
+                        !returnForm.itemsName ||
+                        (isConsumableType(returnForm.inventoryType) && Number(returnForm.remainingQty || 0) > Number(returnForm.issueQty || 0))
+                      ))
+                    }
+                    className={`min-w-[140px] px-10 py-2.5 rounded-xl text-white text-sm font-bold shadow-xl transition-all flex items-center justify-center gap-2 ${isIssueModalOpen ? 'bg-violet-600' : 'bg-fuchsia-600'} hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {isSubmitting ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /><span>Processing...</span></>
+                    ) : isEditing ? (
+                      isIssueModalOpen ? 'Update Issue Record' : 'Update Return Record'
+                    ) : (
+                      isIssueModalOpen ? 'Issue Items' : 'Return Items'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #cbd5e1 transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      `}} />
+    </AdminLayout>
+  );
+};
+
+export default Inventory;
