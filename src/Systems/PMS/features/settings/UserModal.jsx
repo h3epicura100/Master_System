@@ -155,7 +155,7 @@ export function UserModal({ isOpen, onClose, initialValues, onSave }) {
             type="tel"
             value={whatsappNumber}
             onChange={(e) => setWhatsappNumber(e.target.value)}
-            placeholder="e.g. 917000206500"
+            placeholder="e.g. 919876543210"
             helper="For menu finalization notifications (with country code)"
           />
 

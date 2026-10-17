@@ -6,22 +6,20 @@ import { formatDateRangeDisplay, formatDateDisplay, formatShortDateDisplay } fro
 const MAYTAPI_PRODUCT_ID = import.meta.env.VITE_MAYTAPI_PRODUCT_ID;
 const MAYTAPI_PHONE_ID = import.meta.env.VITE_MAYTAPI_PHONE_ID;
 const MAYTAPI_TOKEN = import.meta.env.VITE_MAYTAPI_TOKEN;
-const DEFAULT_NUMBER = import.meta.env.VITE_WHATSAPP_DEFAULT_NUMBER || '917000206500';
-
 /**
- * Normalizes phone number into digits without '+' or spaces (e.g. 917000206500).
+ * Normalizes phone number into digits without '+' or spaces (e.g. 919876543210).
  */
 export function normalizePhoneNumber(rawNumber) {
   if (!rawNumber) return null;
   let digits = String(rawNumber).replace(/\D/g, '');
   if (!digits) return null;
 
-  // If leading 0 with 11 digits (e.g. 07000206500), strip 0
+  // If leading 0 with 11 digits (e.g. 09876543210), strip 0
   if (digits.length === 11 && digits.startsWith('0')) {
     digits = digits.slice(1);
   }
 
-  // 10 digits Indian mobile number (e.g. 7000206500) -> prepend 91
+  // 10 digits Indian mobile number (e.g. 9876543210) -> prepend 91
   if (digits.length === 10) {
     return `91${digits}`;
   }
@@ -46,8 +44,6 @@ export const whatsappService = {
 
   /**
    * Checks if WhatsApp Test Mode is active (VITE_WHATSAPP_TEST_MODE === 'true').
-   * In Test Mode, messages are routed EXCLUSIVELY to VITE_WHATSAPP_DEFAULT_NUMBER (917000206500)
-   * and real staff department numbers are suppressed.
    */
   isTestMode() {
     const val = import.meta.env.VITE_WHATSAPP_TEST_MODE;
@@ -57,10 +53,10 @@ export const whatsappService = {
   },
 
   /**
-   * Returns the normalized default/tester WhatsApp number.
+   * Returns null as default tester numbers are deprecated.
    */
   getDefaultNumber() {
-    return normalizePhoneNumber(DEFAULT_NUMBER);
+    return null;
   },
 
   /**
@@ -220,10 +216,7 @@ export const whatsappService = {
   },
 
   /**
-   * Dispatches menu finalized WhatsApp notifications to all registered department user numbers (Staff & Admin)
-   * plus the default fallback number.
-   * If VITE_WHATSAPP_TEST_MODE=true, sends EXCLUSIVELY to VITE_WHATSAPP_DEFAULT_NUMBER (917000206500)
-   * and suppresses real staff numbers.
+   * Dispatches menu finalized WhatsApp notifications to all registered department user numbers (Staff & Admin).
    * Attaches the file directly with the details message as a single WhatsApp message.
    */
   async sendMenuFinalizedNotification(booking, attachmentPath, attachmentName, remarks) {
@@ -285,16 +278,6 @@ export const whatsappService = {
       } catch (dbErr) {
         console.warn('[WhatsApp Service] Database query fallback failed:', dbErr);
       }
-    }
-
-    if (isTest) {
-      console.info(`[WhatsApp Service] TEST MODE ACTIVE (VITE_WHATSAPP_TEST_MODE=true): Suppressing staff numbers. Sending only to tester number (${DEFAULT_NUMBER}).`);
-    }
-
-    // 2. Always include the default configured tester number
-    const defaultFormatted = normalizePhoneNumber(DEFAULT_NUMBER);
-    if (defaultFormatted) {
-      recipientSet.add(defaultFormatted);
     }
 
     const recipients = Array.from(recipientSet);
@@ -783,9 +766,9 @@ export const whatsappService = {
       throw new Error(`Failed to initialize conversation: ${convErr.message}`);
     }
 
-    // 3. Determine target phone for Maytapi API (respecting Test Mode)
+    // 3. Determine target phone for Maytapi API
     const isTest = this.isTestMode();
-    const actualApiNumber = isTest ? this.getDefaultNumber() : cleanPhone;
+    const actualApiNumber = cleanPhone;
 
     console.log(`[WhatsApp Service] Sending direct message to ${cleanPhone} (API recipient: ${actualApiNumber}, TestMode: ${isTest}, Media: ${Boolean(mediaUrl)})`);
 
@@ -860,7 +843,7 @@ export const whatsappService = {
     }
 
     const isTest = this.isTestMode();
-    const actualApiNumber = isTest ? this.getDefaultNumber() : cleanPhone;
+    const actualApiNumber = cleanPhone;
 
     let apiResponse = null;
     let sendError = null;

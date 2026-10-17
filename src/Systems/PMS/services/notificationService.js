@@ -400,15 +400,8 @@ export const notificationService = {
         // Mark immediately in local cache to prevent concurrent loops
         saveLocalNotifCache(dedupKey);
 
-        // Fetch recipients (strictly assigned dept users, NO admin, or tester number in Test Mode)
-        let recipients = [];
-        if (whatsappService.isTestMode()) {
-          const testNum = whatsappService.getDefaultNumber();
-          recipients = testNum ? [testNum] : [];
-          console.info(`[NotificationService] Test Mode Active: Sending delay alert only to tester number: ${testNum}`);
-        } else {
-          recipients = await this.getRecipientsForDepartment(deptKey);
-        }
+        // Fetch recipients (strictly assigned dept users, NO admin)
+        const recipients = await this.getRecipientsForDepartment(deptKey);
 
         if (recipients.length === 0) {
           console.warn(`[NotificationService] No phone numbers mapped for department: ${deptKey}`);
