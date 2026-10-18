@@ -83,12 +83,12 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
     username: '',
     full_name: '',
     password: '',
-    role: 'user',
+    role: 'staff',
     mobile_number: '',
     is_active: true,
     page_access: {
-      pete: { access: false, role: 'user', pages: [] },
-      ims: { access: false, role: 'user', full_access: false, pages: [] },
+      pete: { access: false, role: 'staff', pages: [] },
+      ims: { access: false, role: 'staff', full_access: false, pages: [] },
       pms: { access: false, role: 'staff', full_access: false, pages: [] },
       hrms: { access: false, role: 'staff', full_access: false, pages: [] },
     }
@@ -98,34 +98,35 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   useEffect(() => {
     if (editingUser) {
       const pAccess = editingUser.page_access || {}
+      const userRole = editingUser.role === 'admin' ? 'admin' : 'staff'
       setFormData({
         username: editingUser.username || '',
         full_name: editingUser.full_name || '',
         password: '', // Blank by default on edit
-        role: editingUser.role || 'user',
+        role: userRole,
         mobile_number: editingUser.mobile_number || '',
         is_active: editingUser.is_active !== false,
         page_access: {
           pete: {
             access: pAccess.pete?.access || false,
-            role: pAccess.pete?.role || 'user',
+            role: userRole,
             pages: Array.isArray(pAccess.pete?.pages) ? pAccess.pete.pages : [],
           },
           ims: {
             access: pAccess.ims?.access || false,
-            role: pAccess.ims?.role || 'user',
+            role: userRole,
             full_access: pAccess.ims?.full_access || false,
             pages: Array.isArray(pAccess.ims?.pages) ? pAccess.ims.pages : [],
           },
           pms: {
             access: pAccess.pms?.access || false,
-            role: pAccess.pms?.role || 'staff',
+            role: userRole,
             full_access: pAccess.pms?.full_access || false,
             pages: Array.isArray(pAccess.pms?.pages) ? pAccess.pms.pages : [],
           },
           hrms: {
             access: pAccess.hrms?.access || false,
-            role: pAccess.hrms?.role || 'staff',
+            role: userRole,
             full_access: pAccess.hrms?.full_access || false,
             pages: Array.isArray(pAccess.hrms?.pages) ? pAccess.hrms.pages : [],
           },
@@ -136,12 +137,12 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         username: '',
         full_name: '',
         password: '',
-        role: 'user',
+        role: 'staff',
         mobile_number: '',
         is_active: true,
         page_access: {
-          pete: { access: false, role: 'user', pages: [] },
-          ims: { access: false, role: 'user', full_access: false, pages: [] },
+          pete: { access: false, role: 'staff', pages: [] },
+          ims: { access: false, role: 'staff', full_access: false, pages: [] },
           pms: { access: false, role: 'staff', full_access: false, pages: [] },
           hrms: { access: false, role: 'staff', full_access: false, pages: [] },
         }
@@ -158,27 +159,24 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
     let count = 0
     const pa = formData.page_access
 
-    if (pa.ims?.access) {
-      if (pa.ims.full_access) {
-        count += IMS_PAGES.length
-      } else {
-        count += (pa.ims.pages || []).length
-      }
+    if (pa.ims?.full_access) {
+      count += IMS_PAGES.length
+    } else {
+      count += (pa.ims?.pages || []).length
     }
-    if (pa.pms?.access) {
-      if (pa.pms.full_access) {
-        count += PMS_PAGES.length
-      } else {
-        count += (pa.pms.pages || []).length
-      }
+
+    if (pa.pms?.full_access) {
+      count += PMS_PAGES.length
+    } else {
+      count += (pa.pms?.pages || []).length
     }
-    if (pa.hrms?.access) {
-      if (pa.hrms.full_access) {
-        count += HRMS_PAGES.length
-      } else {
-        count += (pa.hrms.pages || []).length
-      }
+
+    if (pa.hrms?.full_access) {
+      count += HRMS_PAGES.length
+    } else {
+      count += (pa.hrms?.pages || []).length
     }
+
     return count
   }, [formData.page_access])
 
@@ -197,46 +195,6 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   }
 
   // Handlers for Permissions
-  const handleModuleAccessToggle = (moduleKey) => {
-    setFormData((prev) => {
-      const current = prev.page_access[moduleKey] || {}
-      const newAccess = !current.access
-      let newPages = current.pages || []
-
-      // If turning on and pages are empty, default to all pages for convenience
-      if (newAccess && (!newPages || newPages.length === 0)) {
-        if (moduleKey === 'ims') newPages = IMS_PAGES.map((p) => p.id)
-        if (moduleKey === 'pms') newPages = PMS_PAGES.map((p) => p.id)
-        if (moduleKey === 'hrms') newPages = HRMS_PAGES.map((p) => p.id)
-      }
-
-      return {
-        ...prev,
-        page_access: {
-          ...prev.page_access,
-          [moduleKey]: {
-            ...current,
-            access: newAccess,
-            pages: newPages,
-          },
-        },
-      }
-    })
-  }
-
-  const handleModuleRoleChange = (moduleKey, roleValue) => {
-    setFormData((prev) => ({
-      ...prev,
-      page_access: {
-        ...prev.page_access,
-        [moduleKey]: {
-          ...prev.page_access[moduleKey],
-          role: roleValue,
-        },
-      },
-    }))
-  }
-
   const handleImsFullAccessToggle = () => {
     setFormData((prev) => {
       const current = prev.page_access.ims || {}
@@ -247,8 +205,9 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
           ...prev.page_access,
           ims: {
             ...current,
+            access: newFullAccess,
             full_access: newFullAccess,
-            pages: newFullAccess ? IMS_PAGES.map((p) => p.id) : current.pages,
+            pages: newFullAccess ? IMS_PAGES.map((p) => p.id) : [],
           },
         },
       }
@@ -265,8 +224,9 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
           ...prev.page_access,
           pms: {
             ...current,
+            access: newFullAccess,
             full_access: newFullAccess,
-            pages: newFullAccess ? PMS_PAGES.map((p) => p.id) : current.pages,
+            pages: newFullAccess ? PMS_PAGES.map((p) => p.id) : [],
           },
         },
       }
@@ -283,8 +243,9 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
           ...prev.page_access,
           hrms: {
             ...current,
+            access: newFullAccess,
             full_access: newFullAccess,
-            pages: newFullAccess ? HRMS_PAGES.map((p) => p.id) : current.pages,
+            pages: newFullAccess ? HRMS_PAGES.map((p) => p.id) : [],
           },
         },
       }
@@ -293,13 +254,27 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
   const handlePageToggle = (moduleKey, pageId) => {
     setFormData((prev) => {
-      const currentModule = prev.page_access[moduleKey] || { access: true, pages: [] }
-      const currentPages = currentModule.pages || []
-      const exists = currentPages.includes(pageId)
+      const currentModule = prev.page_access[moduleKey] || {}
+      let currentPages = currentModule.pages || []
 
+      // If currently in full_access mode, start from all pages
+      if (currentModule.full_access) {
+        if (moduleKey === 'ims') currentPages = IMS_PAGES.map((p) => p.id)
+        if (moduleKey === 'pms') currentPages = PMS_PAGES.map((p) => p.id)
+        if (moduleKey === 'hrms') currentPages = HRMS_PAGES.map((p) => p.id)
+      }
+
+      const exists = currentPages.includes(pageId)
       const newPages = exists
         ? currentPages.filter((id) => id !== pageId)
         : [...currentPages, pageId]
+
+      let totalPagesInModule = 0
+      if (moduleKey === 'ims') totalPagesInModule = IMS_PAGES.length
+      if (moduleKey === 'pms') totalPagesInModule = PMS_PAGES.length
+      if (moduleKey === 'hrms') totalPagesInModule = HRMS_PAGES.length
+
+      const isAllSelected = newPages.length === totalPagesInModule
 
       return {
         ...prev,
@@ -307,7 +282,8 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
           ...prev.page_access,
           [moduleKey]: {
             ...currentModule,
-            access: newPages.length > 0 ? true : currentModule.access,
+            access: newPages.length > 0,
+            full_access: isAllSelected,
             pages: newPages,
           },
         },
@@ -323,7 +299,8 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
     setFormData((prev) => {
       const currentModule = prev.page_access[moduleKey] || {}
-      const allSelected = allPageIds.every((id) => (currentModule.pages || []).includes(id))
+      const currentPages = currentModule.full_access ? allPageIds : (currentModule.pages || [])
+      const allSelected = allPageIds.length > 0 && allPageIds.every((id) => currentPages.includes(id))
 
       return {
         ...prev,
@@ -331,7 +308,8 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
           ...prev.page_access,
           [moduleKey]: {
             ...currentModule,
-            access: !allSelected ? true : currentModule.access,
+            access: !allSelected,
+            full_access: !allSelected,
             pages: allSelected ? [] : allPageIds,
           },
         },
@@ -389,6 +367,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
     setSaving(true)
     try {
       const isAdmin = formData.role === 'admin'
+      const userRole = isAdmin ? 'admin' : 'staff'
 
       const pageAccessPayload = isAdmin
         ? {
@@ -411,12 +390,28 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
               pages: HRMS_PAGES.map((p) => p.id),
             },
           }
-        : formData.page_access
+        : {
+            ims: {
+              ...formData.page_access.ims,
+              access: Boolean(formData.page_access.ims?.full_access || (formData.page_access.ims?.pages || []).length > 0),
+              role: 'staff',
+            },
+            pms: {
+              ...formData.page_access.pms,
+              access: Boolean(formData.page_access.pms?.full_access || (formData.page_access.pms?.pages || []).length > 0),
+              role: 'staff',
+            },
+            hrms: {
+              ...formData.page_access.hrms,
+              access: Boolean(formData.page_access.hrms?.full_access || (formData.page_access.hrms?.pages || []).length > 0),
+              role: 'staff',
+            },
+          }
 
       const payload = {
         username: formData.username.trim().toLowerCase(),
         full_name: formData.full_name.trim(),
-        role: formData.role,
+        role: userRole,
         mobile_number: formData.mobile_number?.trim() || '',
         is_active: formData.is_active,
         page_access: pageAccessPayload,
@@ -634,8 +629,8 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                       onChange={handleInputChange}
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all appearance-none"
                     >
-                      <option value="user">User (Standard Access)</option>
                       <option value="admin">Admin (Full System & User Management)</option>
+                      <option value="staff">Staff (Standard Page Access)</option>
                     </select>
                   </div>
                   {formData.role === 'admin' ? (
@@ -650,7 +645,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Admins get unrestricted access. Standard users require page permissions configuration.
+                      Admins get unrestricted access. Staff members require page permissions configured in the next tab.
                     </p>
                   )}
                 </div>
@@ -741,24 +736,18 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                 {/* Section Header */}
                 <div className="p-4 bg-amber-50/60 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleModuleAccessToggle('pms')}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                        formData.page_access.pms?.access ? 'bg-amber-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                          formData.page_access.pms?.access ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-slate-900 text-sm">H3MS System</span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-800">
                           Production & Catering
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          (formData.page_access.pms?.full_access ? PMS_PAGES.length : (formData.page_access.pms?.pages || []).length) > 0
+                            ? 'bg-amber-200/80 text-amber-900'
+                            : 'bg-slate-200/80 text-slate-600'
+                        }`}>
+                          {formData.page_access.pms?.full_access ? PMS_PAGES.length : (formData.page_access.pms?.pages || []).length}/{PMS_PAGES.length} Selected
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">17 Departments, Menu Finalize, Bookings, AI Chatbot & Delay Logs</p>
@@ -767,10 +756,9 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
                   <div className="flex items-center gap-3">
                     {/* Full Access Switch */}
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        disabled={!formData.page_access.pms?.access}
                         checked={formData.page_access.pms?.full_access || false}
                         onChange={handlePmsFullAccessToggle}
                         className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500"
@@ -778,28 +766,14 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                       <span>Full Access</span>
                     </label>
 
-                    {/* Role Dropdown */}
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                      <span>Role:</span>
-                      <select
-                        disabled={!formData.page_access.pms?.access}
-                        value={formData.page_access.pms?.role || 'staff'}
-                        onChange={(e) => handleModuleRoleChange('pms', e.target.value)}
-                        className="py-1 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="staff">Staff</option>
-                        <option value="chef">Chef</option>
-                      </select>
-                    </div>
-
                     <button
                       type="button"
-                      disabled={!formData.page_access.pms?.access || formData.page_access.pms?.full_access}
                       onClick={() => handleSelectAllInModule('pms')}
-                      className="text-xs font-bold text-amber-700 hover:text-amber-800 disabled:text-slate-300 transition-colors"
+                      className="text-xs font-bold text-amber-700 hover:text-amber-800 transition-colors"
                     >
-                      Select All
+                      {(formData.page_access.pms?.full_access ? PMS_PAGES.length : (formData.page_access.pms?.pages || []).length) === PMS_PAGES.length
+                        ? 'Deselect All'
+                        : 'Select All'}
                     </button>
                   </div>
                 </div>
@@ -807,25 +781,22 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                 {/* Page List */}
                 <div className="divide-y divide-slate-100 bg-white max-h-72 overflow-y-auto">
                   {filterPages(PMS_PAGES).map((page) => {
-                    const isChecked =
-                      formData.page_access.pms?.access &&
-                      (formData.page_access.pms?.full_access ||
-                        (formData.page_access.pms?.pages || []).includes(page.id))
+                    const isChecked = Boolean(
+                      formData.page_access.pms?.full_access ||
+                        (formData.page_access.pms?.pages || []).includes(page.id)
+                    )
 
                     return (
                       <label
                         key={page.id}
-                        className={`flex items-center justify-between p-3 hover:bg-slate-50/80 cursor-pointer transition-colors ${
-                          !formData.page_access.pms?.access ? 'opacity-50 pointer-events-none' : ''
-                        }`}
+                        className="flex items-center justify-between p-3 hover:bg-slate-50/80 cursor-pointer transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <input
                             type="checkbox"
-                            disabled={formData.page_access.pms?.full_access}
                             checked={isChecked}
                             onChange={() => handlePageToggle('pms', page.id)}
-                            className="w-4 h-4 rounded text-amber-600 border-slate-300 focus:ring-amber-500 disabled:opacity-50"
+                            className="w-4 h-4 rounded text-amber-600 border-slate-300 focus:ring-amber-500"
                           />
                           <div>
                             <span className="font-bold text-slate-800 text-xs block">{page.name}</span>
@@ -855,24 +826,18 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                 {/* Section Header */}
                 <div className="p-4 bg-violet-50/50 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleModuleAccessToggle('ims')}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                        formData.page_access.ims?.access ? 'bg-violet-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                          formData.page_access.ims?.access ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-slate-900 text-sm">Crockery & Cutlery IMS</span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-violet-100 text-violet-800">
                           Inventory & Ware
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          (formData.page_access.ims?.full_access ? IMS_PAGES.length : (formData.page_access.ims?.pages || []).length) > 0
+                            ? 'bg-violet-200/80 text-violet-900'
+                            : 'bg-slate-200/80 text-slate-600'
+                        }`}>
+                          {formData.page_access.ims?.full_access ? IMS_PAGES.length : (formData.page_access.ims?.pages || []).length}/{IMS_PAGES.length} Selected
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">Stock purchases, party issues, returns & damages</p>
@@ -881,10 +846,9 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
                   <div className="flex items-center gap-3">
                     {/* Full Access Switch */}
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        disabled={!formData.page_access.ims?.access}
                         checked={formData.page_access.ims?.full_access || false}
                         onChange={handleImsFullAccessToggle}
                         className="w-3.5 h-3.5 rounded text-violet-600 focus:ring-violet-500"
@@ -892,27 +856,14 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                       <span>Full Access</span>
                     </label>
 
-                    {/* Role Dropdown */}
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                      <span>Role:</span>
-                      <select
-                        disabled={!formData.page_access.ims?.access}
-                        value={formData.page_access.ims?.role || 'user'}
-                        onChange={(e) => handleModuleRoleChange('ims', e.target.value)}
-                        className="py-1 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="user">User</option>
-                      </select>
-                    </div>
-
                     <button
                       type="button"
-                      disabled={!formData.page_access.ims?.access || formData.page_access.ims?.full_access}
                       onClick={() => handleSelectAllInModule('ims')}
-                      className="text-xs font-bold text-violet-700 hover:text-violet-800 disabled:text-slate-300 transition-colors"
+                      className="text-xs font-bold text-violet-700 hover:text-violet-800 transition-colors"
                     >
-                      Select All
+                      {(formData.page_access.ims?.full_access ? IMS_PAGES.length : (formData.page_access.ims?.pages || []).length) === IMS_PAGES.length
+                        ? 'Deselect All'
+                        : 'Select All'}
                     </button>
                   </div>
                 </div>
@@ -920,25 +871,22 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                 {/* Page List */}
                 <div className="divide-y divide-slate-100 bg-white">
                   {filterPages(IMS_PAGES).map((page) => {
-                    const isChecked =
-                      formData.page_access.ims?.access &&
-                      (formData.page_access.ims?.full_access ||
-                        (formData.page_access.ims?.pages || []).includes(page.id))
+                    const isChecked = Boolean(
+                      formData.page_access.ims?.full_access ||
+                        (formData.page_access.ims?.pages || []).includes(page.id)
+                    )
 
                     return (
                       <label
                         key={page.id}
-                        className={`flex items-center justify-between p-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors ${
-                          !formData.page_access.ims?.access ? 'opacity-50 pointer-events-none' : ''
-                        }`}
+                        className="flex items-center justify-between p-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <input
                             type="checkbox"
-                            disabled={formData.page_access.ims?.full_access}
                             checked={isChecked}
                             onChange={() => handlePageToggle('ims', page.id)}
-                            className="w-4 h-4 rounded text-violet-600 border-slate-300 focus:ring-violet-500 disabled:opacity-50"
+                            className="w-4 h-4 rounded text-violet-600 border-slate-300 focus:ring-violet-500"
                           />
                           <div>
                             <span className="font-bold text-slate-800 text-xs block">{page.name}</span>
@@ -968,24 +916,18 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                 {/* Section Header */}
                 <div className="p-4 bg-rose-50/50 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleModuleAccessToggle('hrms')}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                        formData.page_access.hrms?.access ? 'bg-rose-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                          formData.page_access.hrms?.access ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-slate-900 text-sm">HRMS System</span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-rose-100 text-rose-800">
                           Staff & Operations
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          (formData.page_access.hrms?.full_access ? HRMS_PAGES.length : (formData.page_access.hrms?.pages || []).length) > 0
+                            ? 'bg-rose-200/80 text-rose-900'
+                            : 'bg-slate-200/80 text-slate-600'
+                        }`}>
+                          {formData.page_access.hrms?.full_access ? HRMS_PAGES.length : (formData.page_access.hrms?.pages || []).length}/{HRMS_PAGES.length} Selected
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">Daily Attendance, Directory, Performance TAT, Advances & Payroll</p>
@@ -993,10 +935,9 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        disabled={!formData.page_access.hrms?.access}
                         checked={formData.page_access.hrms?.full_access || false}
                         onChange={handleHrmsFullAccessToggle}
                         className="w-3.5 h-3.5 rounded text-rose-600 focus:ring-rose-500"
@@ -1004,27 +945,14 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                       <span>Full Access</span>
                     </label>
 
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                      <span>Role:</span>
-                      <select
-                        disabled={!formData.page_access.hrms?.access}
-                        value={formData.page_access.hrms?.role || 'staff'}
-                        onChange={(e) => handleModuleRoleChange('hrms', e.target.value)}
-                        className="py-1 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="manager">Manager</option>
-                        <option value="staff">Staff</option>
-                      </select>
-                    </div>
-
                     <button
                       type="button"
-                      disabled={!formData.page_access.hrms?.access || formData.page_access.hrms?.full_access}
                       onClick={() => handleSelectAllInModule('hrms')}
-                      className="text-xs font-bold text-rose-700 hover:text-rose-800 disabled:text-slate-300 transition-colors"
+                      className="text-xs font-bold text-rose-700 hover:text-rose-800 transition-colors"
                     >
-                      Select All
+                      {(formData.page_access.hrms?.full_access ? HRMS_PAGES.length : (formData.page_access.hrms?.pages || []).length) === HRMS_PAGES.length
+                        ? 'Deselect All'
+                        : 'Select All'}
                     </button>
                   </div>
                 </div>
@@ -1032,25 +960,22 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                 {/* Page List */}
                 <div className="divide-y divide-slate-100 bg-white">
                   {filterPages(HRMS_PAGES).map((page) => {
-                    const isChecked =
-                      formData.page_access.hrms?.access &&
-                      (formData.page_access.hrms?.full_access ||
-                        (formData.page_access.hrms?.pages || []).includes(page.id))
+                    const isChecked = Boolean(
+                      formData.page_access.hrms?.full_access ||
+                        (formData.page_access.hrms?.pages || []).includes(page.id)
+                    )
 
                     return (
                       <label
                         key={page.id}
-                        className={`flex items-center justify-between p-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors ${
-                          !formData.page_access.hrms?.access ? 'opacity-50 pointer-events-none' : ''
-                        }`}
+                        className="flex items-center justify-between p-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <input
                             type="checkbox"
-                            disabled={formData.page_access.hrms?.full_access}
                             checked={isChecked}
                             onChange={() => handlePageToggle('hrms', page.id)}
-                            className="w-4 h-4 rounded text-rose-600 border-slate-300 focus:ring-rose-500 disabled:opacity-50"
+                            className="w-4 h-4 rounded text-rose-600 border-slate-300 focus:ring-rose-500"
                           />
                           <div>
                             <span className="font-bold text-slate-800 text-xs block">{page.name}</span>
@@ -1062,7 +987,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               isChecked
-                                ? 'bg-rose-100 text-rose-700'
+                                ? 'bg-rose-100 text-rose-800'
                                 : 'bg-slate-100 text-slate-400'
                             }`}
                           >

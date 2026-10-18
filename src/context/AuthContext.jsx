@@ -23,7 +23,7 @@ export function AuthProvider({ children }) {
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
         sessionStorage.setItem('username', currentUser.username || '')
         sessionStorage.setItem('name', currentUser.name || currentUser.username || '')
-        sessionStorage.setItem('role', currentUser.role === 'admin' ? 'admin' : (currentUser.page_access?.ims?.role || 'user'))
+        sessionStorage.setItem('role', currentUser.role === 'admin' ? 'admin' : 'staff')
       } else {
         sessionStorage.removeItem(STORAGE_KEY)
         sessionStorage.removeItem('username')
@@ -114,7 +114,7 @@ export function AuthProvider({ children }) {
   const getModuleRole = (systemKey) => {
     if (!currentUser) return null
     if (isAdmin()) return 'admin'
-    return currentUser.page_access?.[systemKey]?.role || 'user'
+    return currentUser.page_access?.[systemKey]?.role === 'admin' ? 'admin' : 'staff'
   }
 
   const value = {

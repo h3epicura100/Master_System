@@ -581,17 +581,16 @@ export default function Dashboard() {
   // eslint-disable-next-line no-unused-vars
   const MetricCard = ({ title, value, icon: Icon, color, loading: cardLoading }) => (
     <div
-      className={`group relative overflow-hidden bg-white p-2.5 px-4 rounded-2xl border border-violet-100 shadow-sm shadow-violet-500/5 hover:shadow-violet-500/10 transition-all duration-500 cursor-pointer flex items-center gap-3.5 ${cardLoading ? 'animate-pulse' : ''}`}
+      className={`group relative overflow-hidden bg-white p-3.5 px-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-sm transition-all duration-300 cursor-pointer flex items-center gap-3.5 ${cardLoading ? 'animate-pulse' : ''}`}
       onClick={() => !cardLoading && setShowExactValues(!showExactValues)}
     >
-      <div className={`absolute top-0 left-0 w-1 h-full ${color}`}></div>
-      <div className={`p-1.5 rounded-lg ${color.replace('bg-', '')}-50 transition-colors duration-500 group-hover:scale-110 shrink-0`}>
-        <Icon className={`h-3.5 w-3.5 ${color.replace('bg-', 'text-')}`} />
+      <div className={`p-2.5 rounded-xl ${color.replace('bg-', '')}-50 transition-colors group-hover:scale-105 shrink-0`}>
+        <Icon className={`h-4 w-4 ${color.replace('bg-', 'text-')}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[7.5px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-0.5 truncate">{title}</p>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5 truncate">{title}</p>
         <div className="flex items-baseline gap-2">
-          {cardLoading ? <div className="h-6 w-16 bg-slate-100 rounded-md"></div> : <h3 className="text-lg font-bold text-slate-900 tracking-tight truncate">{value}</h3>}
+          {cardLoading ? <div className="h-6 w-16 bg-slate-100 rounded-md"></div> : <h3 className="text-xl font-extrabold text-slate-900 tracking-tight truncate">{value}</h3>}
         </div>
       </div>
     </div>
@@ -599,11 +598,11 @@ export default function Dashboard() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-[#f0f2f8] font-sans flex flex-col">
-        <div className="flex-1 flex flex-col min-h-0 space-y-4 animate-in fade-in slide-in-from-bottom-6 duration-1000">
+      <div className="w-full flex flex-col space-y-4">
+        <div className="flex-1 flex flex-col min-h-0 space-y-4 animate-in fade-in duration-300">
 
-          <div className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-8 pt-4 sm:pt-6 pb-2">
-            <h1 className="text-xl sm:text-3xl font-bold text-slate-900 tracking-tight">Executive Dashboard</h1>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Executive Dashboard</h1>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
@@ -611,25 +610,25 @@ export default function Dashboard() {
                   else if (activeTab === "history") fetchHistoryData();
                   else fetchSummaryData();
                 }}
-                className="p-2.5 sm:p-3.5 bg-white border border-violet-100 rounded-xl text-slate-400 hover:text-violet-600 shadow-xl shadow-violet-500/5 transition-all active:scale-95"
+                className="p-2.5 sm:p-3 bg-white border border-slate-200/80 rounded-xl text-slate-400 hover:text-violet-600 shadow-xs transition-all active:scale-95"
                 title="Refresh Data"
               >
-                <RefreshCw className={`h-4.5 w-4.5 ${(loading || historyLoading || summaryLoading) ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 ${(loading || historyLoading || summaryLoading) ? 'animate-spin' : ''}`} />
               </button>
-              <div className="h-8 w-[1px] bg-slate-200 mx-1"></div>
+              <div className="h-6 w-[1px] bg-slate-200 mx-1"></div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Last updated: <span className="text-slate-900">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></p>
             </div>
           </div>
 
           {activeTab === "summary" ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 px-3 sm:px-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
               <MetricCard title="Total Stock" value={formatNumber(summaryCardStats.totalStock)} icon={Package} color="bg-violet-600" loading={summaryLoading} />
               <MetricCard title="Total Issued" value={formatNumber(summaryCardStats.totalIssued)} icon={Activity} color="bg-blue-500" loading={summaryLoading} />
               <MetricCard title="Total Returned" value={formatNumber(summaryCardStats.totalReturned)} icon={RefreshCw} color="bg-emerald-500" loading={summaryLoading} />
               <MetricCard title="Remaining Out" value={formatNumber(summaryCardStats.totalRemaining)} icon={Clock} color="bg-amber-500" loading={summaryLoading} />
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 px-3 sm:px-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
               <MetricCard title="Total Purchased" value={formatNumber(dashboardStats.totalPurchased)} icon={Package} color="bg-violet-600" loading={activeTab === "today" ? loading : historyLoading} />
               <MetricCard title="Opening Balance" value={formatNumber(dashboardStats.openingBalance)} icon={Layout} color="bg-fuchsia-600" loading={activeTab === "today" ? loading : historyLoading} />
               <MetricCard title="Total Issued" value={formatNumber(dashboardStats.totalIssued)} icon={Activity} color="bg-blue-500" loading={activeTab === "today" ? loading : historyLoading} />
@@ -637,31 +636,33 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="bg-white mx-3 sm:mx-6 mb-6 rounded-xl border border-slate-100 shadow-sm flex flex-col flex-1 min-h-0 relative">
+          <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col flex-1 min-h-0 relative">
             
-            <div className="flex flex-col border-b border-slate-100/50">
-              <div className="flex px-3 sm:px-6 pt-4 gap-1">
-                <button 
-                  onClick={() => setActiveTab("today")}
-                  className={`px-4 sm:px-6 py-2 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "today" ? 'bg-slate-50 text-violet-600 border-x border-t border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  Today
-                </button>
-                <button 
-                  onClick={() => setActiveTab("history")}
-                  className={`px-4 sm:px-6 py-2 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "history" ? 'bg-slate-50 text-violet-600 border-x border-t border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  History
-                </button>
-                <button 
-                  onClick={() => setActiveTab("summary")}
-                  className={`px-4 sm:px-6 py-2 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "summary" ? 'bg-slate-50 text-violet-600 border-x border-t border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  Item Summary
-                </button>
+            <div className="flex flex-col border-b border-slate-100/80 rounded-t-2xl">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-3.5 border-b border-slate-100/80">
+                <div className="inline-flex p-1 bg-slate-100/80 rounded-xl self-start">
+                  <button 
+                    onClick={() => setActiveTab("today")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "today" ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    Today
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("history")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "history" ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    History
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("summary")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === "summary" ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    Item Summary
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 bg-slate-50/50">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-3.5 bg-white">
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto min-w-0">
                   <h3 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight whitespace-nowrap">
                     {activeTab === "summary" ? "Inventory Summary" : "Inventory Details"}

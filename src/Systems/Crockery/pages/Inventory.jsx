@@ -525,9 +525,18 @@ const Inventory = () => {
     setIsTableLoading(true);
     try {
       const [allIssues, allReturns] = await Promise.all([
-        fetchAllFromTable(TABLES.ISSUES, `*, ${withItemMaster('item_name, inventory_type, department')}`, COLUMNS.ISSUES.CREATED_AT, false),
-        fetchAllFromTable(TABLES.RETURNS, `*, ${withItemMaster('item_name, inventory_type, department')}`, COLUMNS.RETURNS.CREATED_AT, false)
+        fetchAllFromTable(TABLES.ISSUES, `*, ${withItemMaster('item_name, inventory_type, department, unit')}`, COLUMNS.ISSUES.CREATED_AT, false),
+        fetchAllFromTable(TABLES.RETURNS, `*, ${withItemMaster('item_name, inventory_type, department, unit')}`, COLUMNS.RETURNS.CREATED_AT, false)
       ]);
+
+      const resolveItemUnit = (row) => {
+        const u = row.item_master?.unit || items.find(i => i.id === row.item_id || (i.item_name && row.item_master?.item_name && i.item_name === row.item_master?.item_name))?.unit;
+        if (u) return u;
+        if (row.item_master?.inventory_type && !isConsumableType(row.item_master?.inventory_type)) {
+          return 'PCS';
+        }
+        return '';
+      };
 
       setIssueHistory((allIssues || []).map(row => ({
         id: row.id,
@@ -539,6 +548,7 @@ const Inventory = () => {
         partyName: row.party_name,
         eventDate: row.event_date,
         qty: row.issue_qty,
+        unit: resolveItemUnit(row),
         damageRate: row.damage_rate,
         rentingRate: row.renting_rate,
         openingBalance: row.opening_balance,
@@ -577,6 +587,7 @@ const Inventory = () => {
           returnDate: row.return_date,
           issueQty: row.issue_qty,
           qty: row.return_qty,
+          unit: resolveItemUnit(row),
           damage: row.damage_qty,
           missing: row.missing_qty,
           consumed: row.consumed_qty != null ? row.consumed_qty : (isCons ? Math.max(0, Number(row.issue_qty || 0) - Number(row.return_qty || 0)) : 0),
@@ -621,11 +632,11 @@ const Inventory = () => {
         const availableWidth = pageWidth - marginOffset;
         const colStyles = {
           sNo: { cellWidth: 15 },
-          item: { cellWidth: 50 },
-          qty: { cellWidth: 15 },
+          item: { cellWidth: 48 },
+          qty: { cellWidth: 20 },
           image: { cellWidth: 25 },
-          dishes: { cellWidth: 43 },
-          remark: { cellWidth: availableWidth - (15 + 50 + 15 + 25 + 43) }
+          dishes: { cellWidth: 40 },
+          remark: { cellWidth: availableWidth - (15 + 48 + 20 + 25 + 40) }
         };
 
         const getItemImage = (row) => {
@@ -640,10 +651,11 @@ const Inventory = () => {
 
         const body = rows.map((row, index) => {
           const itemImg = getItemImage(row);
+          const u = row.unit ? ` ${row.unit}` : '';
           return {
             sNo: index + 1,
             item: row.itemName || '-',
-            qty: row.qty || '0',
+            qty: row.qty != null ? `${row.qty}${u}` : '0',
             image: itemImg || '',
             dishes: row.dishes || '-',
             remark: ''
@@ -771,10 +783,17 @@ const Inventory = () => {
   };
 
   useEffect(() => {
+    setIssuePage(1);
+    setPartyDetailPage(1);
+    setPartyGroupPage(1);
+  }, [issuedFilterItem, issuedFilterType, issuedFilterParty, issuedStartDate, issuedEndDate, searchTerm]);
+
+  useEffect(() => {
     setSelectedPartyCard(null);
     setIssuePage(1);
     setPartyGroupPage(1);
-  }, [activeTab, issuedFilterItem, issuedFilterType, issuedFilterParty, issuedStartDate, issuedEndDate, searchTerm]);
+    setPartyDetailPage(1);
+  }, [activeTab]);
 
   useEffect(() => {
     setReturnPage(1);
@@ -796,14 +815,15 @@ const Inventory = () => {
 
   // Derive Options for Filters
   const issuedOptions = useMemo(() => {
+    const effectiveParty = selectedPartyCard || issuedFilterParty;
     const s = normalizeForMatch(searchTerm);
     const filteredByItem = issueHistory.filter(r => {
       const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
-      return matchesSearch && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!issuedFilterParty || normalizeForMatch(r.partyName) === normalizeForMatch(issuedFilterParty));
+      return matchesSearch && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
     });
     const filteredByType = issueHistory.filter(r => {
       const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
-      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterParty || normalizeForMatch(r.partyName) === normalizeForMatch(issuedFilterParty));
+      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
     });
     const filteredByParty = issueHistory.filter(r => {
       const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
@@ -815,7 +835,7 @@ const Inventory = () => {
       types: [...new Set(filteredByType.map(r => r.inventoryType).filter(Boolean))].sort(),
       parties: [...new Set(filteredByParty.map(r => r.partyName).filter(Boolean))].sort(),
     };
-  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty]);
+  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty, selectedPartyCard]);
 
   const returnOptions = useMemo(() => {
     const s = normalizeForMatch(searchTerm);
@@ -840,12 +860,13 @@ const Inventory = () => {
   }, [returnHistory, searchTerm, returnFilterItem, returnFilterType, returnFilterParty]);
 
   const filteredIssuedHistory = useMemo(() => {
+    const effectiveParty = selectedPartyCard || issuedFilterParty;
     const s = normalizeForMatch(searchTerm);
     return issueHistory.filter(row => {
       const matchesSearch = !s || [row.serial, row.itemName, row.partyName, row.inventoryType, row.issuer, row.venueName].some(v => v && normalizeForMatch(v).includes(s));
       const matchesItem = !issuedFilterItem || row.itemName === issuedFilterItem;
       const matchesType = !issuedFilterType || row.inventoryType === issuedFilterType;
-      const matchesParty = !issuedFilterParty || normalizeForMatch(row.partyName) === normalizeForMatch(issuedFilterParty);
+      const matchesParty = !effectiveParty || normalizeForMatch(row.partyName) === normalizeForMatch(effectiveParty);
       let matchesDate = true;
       if (issuedStartDate || issuedEndDate) {
         const rowDate = parseRowDate(row.eventDate);
@@ -859,7 +880,7 @@ const Inventory = () => {
       }
       return matchesSearch && matchesItem && matchesType && matchesParty && matchesDate;
     });
-  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty, issuedStartDate, issuedEndDate]);
+  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty, selectedPartyCard, issuedStartDate, issuedEndDate]);
 
   const shouldGroup = activeTab === 'issued' && !(issuedFilterItem || issuedFilterType || issuedFilterParty || issuedStartDate || issuedEndDate || searchTerm);
 
@@ -874,7 +895,7 @@ const Inventory = () => {
     return Object.entries(groups).map(([party, rows]) => {
       const latestRow = rows[0];
       const latestDate = latestRow ? latestRow.eventDate : '';
-      const totalQty = rows.reduce((sum, r) => sum + parseNumber(r.qty), 0);
+      const totalQty = Math.round(rows.reduce((sum, r) => sum + parseNumber(r.qty), 0) * 100) / 100;
       const totalCost = rows.reduce((sum, r) => sum + parseNumber(r.estimatedCost), 0);
       return { partyName: party, latestDate, totalQty, totalCost, rows };
     });
@@ -1392,7 +1413,7 @@ const Inventory = () => {
     const sourceData = isIssued ? filteredIssuedHistory : filteredReturnHistory;
 
     const filteredReportData = sourceData.filter(row => {
-      if (isIssued && shouldGroup && selectedPartyCard) {
+      if (isIssued && selectedPartyCard) {
         return normalizeForMatch(row.partyName) === normalizeForMatch(selectedPartyCard);
       }
       return true;
@@ -1416,7 +1437,7 @@ const Inventory = () => {
 
     const uniformInfo = {
       date: allSameDate ? commonDateRaw : null,
-      party: allSameParty ? commonParty : null,
+      party: (allSameParty ? commonParty : null) || selectedPartyCard || null,
       for: allSameFor ? commonFor : null,
       eventDate: allSameEventDate ? commonEventDateRaw : null
     };
@@ -1451,8 +1472,28 @@ const Inventory = () => {
             rowData[col.key] = formatDate(val);
           } else if (['estimatedCost', 'totalCost'].includes(col.key)) {
             rowData[col.key] = `Rs ${parseFloat(val || 0).toFixed(2)}`;
+          } else if (col.key === 'qty' || col.key === 'issueQty') {
+            const u = row.unit ? ` ${row.unit}` : '';
+            rowData[col.key] = val != null ? `${val}${u}` : '-';
           } else if (col.key === 'notReturned') {
-            rowData[col.key] = (Number(row.damage || 0) + Number(row.missing || 0));
+            if (isConsumableType(row.inventoryType)) {
+              const consumedVal = row.consumed != null
+                ? Number(row.consumed)
+                : Math.max(0, Number(row.issueQty || 0) - Number(row.qty || 0));
+              const u = row.unit ? ` ${row.unit}` : '';
+              rowData[col.key] = `${consumedVal}${u} (consumed)`;
+            } else {
+              const notRetVal = (Number(row.damage || 0) + Number(row.missing || 0));
+              const u = row.unit ? ` ${row.unit}` : '';
+              rowData[col.key] = notRetVal > 0 ? `${notRetVal}${u}` : '0';
+            }
+          } else if (col.key === 'damage' || col.key === 'missing') {
+            if (isConsumableType(row.inventoryType)) {
+              rowData[col.key] = '-';
+            } else {
+              const u = row.unit && Number(val) > 0 ? ` ${row.unit}` : '';
+              rowData[col.key] = val != null ? `${val}${u}` : '-';
+            }
           } else {
             rowData[col.key] = val != null ? val : '-';
           }
@@ -1525,11 +1566,17 @@ const Inventory = () => {
 
         const totalCostSum = filteredReportData.reduce((sum, row) => sum + (parseFloat(row.totalCost) || 0), 0);
         const totalEstimatedCostSum = filteredReportData.reduce((sum, row) => sum + (parseFloat(row.estimatedCost) || 0), 0);
-        const totalIssueQtySum = filteredReportData.reduce((sum, row) => sum + (Number(row.issueQty) || 0), 0);
+        const totalIssueQtySum = filteredReportData.reduce((sum, row) => sum + (Number(isIssued ? row.qty : row.issueQty) || 0), 0);
         const totalReturnQtySum = filteredReportData.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
         const totalDamageSum = filteredReportData.reduce((sum, row) => sum + (Number(row.damage) || 0), 0);
         const totalMissingSum = filteredReportData.reduce((sum, row) => sum + (Number(row.missing) || 0), 0);
         const totalNotReturnedSum = filteredReportData.reduce((sum, row) => sum + (Number(row.damage || 0) + Number(row.missing || 0)), 0);
+
+        const formatQtySum = (sum) => {
+          if (sum == null || isNaN(sum)) return '-';
+          const rounded = Math.round(Number(sum) * 100) / 100;
+          return rounded !== 0 ? String(rounded) : '0';
+        };
 
         const footRow = {};
         reportColumns.forEach(col => {
@@ -1540,15 +1587,15 @@ const Inventory = () => {
           } else if (col.dataKey === 'estimatedCost') {
             footRow[col.dataKey] = `Rs ${totalEstimatedCostSum.toFixed(2)}`;
           } else if (col.dataKey === 'issueQty') {
-            footRow[col.dataKey] = totalIssueQtySum || '-';
+            footRow[col.dataKey] = formatQtySum(totalIssueQtySum);
           } else if (col.dataKey === 'qty') {
-            footRow[col.dataKey] = totalReturnQtySum || '-';
+            footRow[col.dataKey] = formatQtySum(isIssued ? totalIssueQtySum : totalReturnQtySum);
           } else if (col.dataKey === 'damage') {
-            footRow[col.dataKey] = totalDamageSum || '0';
+            footRow[col.dataKey] = formatQtySum(totalDamageSum);
           } else if (col.dataKey === 'missing') {
-            footRow[col.dataKey] = totalMissingSum || '0';
+            footRow[col.dataKey] = formatQtySum(totalMissingSum);
           } else if (col.dataKey === 'notReturned') {
-            footRow[col.dataKey] = totalNotReturnedSum || '0';
+            footRow[col.dataKey] = formatQtySum(totalNotReturnedSum);
           } else {
             footRow[col.dataKey] = '';
           }
@@ -1655,7 +1702,19 @@ const Inventory = () => {
 
         if (typeof doc.putTotalPages === 'function') doc.putTotalPages('{total_pages_count_string}');
 
-        doc.save(`${isIssued ? 'Issued' : 'Return'}_History_${new Date().toISOString().split('T')[0]}.pdf`);
+        let filterSuffix = '';
+        if (isIssued) {
+          if (selectedPartyCard) filterSuffix += `_${selectedPartyCard.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          else if (issuedFilterParty) filterSuffix += `_${issuedFilterParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (issuedFilterType) filterSuffix += `_${issuedFilterType.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (issuedFilterItem) filterSuffix += `_${issuedFilterItem.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        } else {
+          if (returnFilterParty) filterSuffix += `_${returnFilterParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (returnFilterType) filterSuffix += `_${returnFilterType.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (returnFilterItem) filterSuffix += `_${returnFilterItem.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        }
+
+        doc.save(`${isIssued ? 'Issued' : 'Return'}_History${filterSuffix}_${new Date().toISOString().split('T')[0]}.pdf`);
         showToast('Report generated successfully');
       } catch (err) {
         console.error("History Report PDF Error:", err);
@@ -1668,16 +1727,16 @@ const Inventory = () => {
 
   return (
     <AdminLayout>
-      <div className="min-h-[calc(100vh-42px)] bg-[#f0f2f8] font-sans flex flex-col overflow-hidden">
+      <div className="w-full flex flex-col space-y-4">
         {toast.show && (
           <div className={`fixed bottom-8 right-8 px-6 py-4 rounded-3xl shadow-2xl z-[200] transition-all duration-300 transform animate-in slide-in-from-right-8 ${toast.type === "success" ? "bg-violet-600 text-white shadow-violet-200" : "bg-red-600 text-white shadow-red-200"}`}>
             <div className="flex items-center gap-3 font-sans"><span className="text-[10px] font-black uppercase tracking-widest">{toast.message}</span></div>
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-3 sm:px-8 pt-4 sm:pt-6 pb-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <h1 className="text-xl sm:text-3xl font-bold text-slate-800 tracking-tight">Inventory Management</h1>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Inventory Management</h1>
             {selectedIds.size > 0 && (
               <button
                 onClick={handleDeleteSelected}
@@ -1737,11 +1796,11 @@ const Inventory = () => {
           </div>
         </div>
 
-        <div className="mx-2 sm:mx-6 mb-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col flex-1 min-h-0 relative">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-100/50 rounded-t-xl">
-            <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl shadow-inner-sm self-start lg:self-auto">
-              <button onClick={() => setActiveTab('issued')} className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'issued' ? 'bg-white text-fuchsia-600 shadow-xl shadow-fuchsia-100/50 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>Issued History</button>
-              <button onClick={() => setActiveTab('return')} className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'return' ? 'bg-white text-fuchsia-600 shadow-xl shadow-fuchsia-100/50 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>Return History</button>
+        <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col flex-1 min-h-0 relative">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-3.5 border-b border-slate-100/80 rounded-t-2xl">
+            <div className="inline-flex p-1 bg-slate-100/80 rounded-xl self-start lg:self-auto">
+              <button onClick={() => setActiveTab('issued')} className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'issued' ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>Issued History</button>
+              <button onClick={() => setActiveTab('return')} className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'return' ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>Return History</button>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -1754,9 +1813,22 @@ const Inventory = () => {
                 <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-50 rounded-2xl border border-slate-100 max-w-full">
                   {activeTab === 'issued' ? (
                     <>
-                      <select value={issuedFilterParty} onChange={(e) => setIssuedFilterParty(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
+                      <select
+                        value={selectedPartyCard || issuedFilterParty}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setIssuedFilterParty(val);
+                          setSelectedPartyCard(val || null);
+                        }}
+                        className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}
+                      >
                         <option value="">All Party</option>
                         {issuedOptions.parties.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                      <select value={issuedFilterType} onChange={(e) => setIssuedFilterType(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }} title="Filter by Type">
+                        <option value="">All Types</option>
+                        {issuedOptions.types.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                       <select value={issuedFilterItem} onChange={(e) => setIssuedFilterItem(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
                         <option value="">All Items</option>
@@ -1768,6 +1840,10 @@ const Inventory = () => {
                       <select value={returnFilterParty} onChange={(e) => setReturnFilterParty(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
                         <option value="">All Party</option>
                         {returnOptions.parties.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                      <select value={returnFilterType} onChange={(e) => setReturnFilterType(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }} title="Filter by Type">
+                        <option value="">All Types</option>
+                        {returnOptions.types.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                       <select value={returnFilterItem} onChange={(e) => setReturnFilterItem(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
                         <option value="">All Items</option>
@@ -1891,7 +1967,7 @@ const Inventory = () => {
               ) : (
                 <>
                   <div className="flex-1 overflow-auto custom-scrollbar p-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 animate-in fade-in duration-300">
                       {groupedIssuedData
                         .slice((partyGroupPage - 1) * PAGE_SIZE, partyGroupPage * PAGE_SIZE)
                         .map((group, idx) => (
@@ -1920,25 +1996,91 @@ const Inventory = () => {
             </div>
           ) : (
             <div className="flex-1 flex flex-col min-h-0">
-              {activeTab === 'issued' && shouldGroup && selectedPartyCard && (
+              {activeTab === 'issued' && selectedPartyCard && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-4 bg-white border-b border-slate-100/80 shrink-0 animate-in slide-in-from-top-2 duration-200">
                   <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setSelectedPartyCard(null)}
+                      onClick={() => {
+                        setSelectedPartyCard(null);
+                        setIssuedFilterParty("");
+                        setIssuedFilterItem("");
+                        setIssuedFilterType("");
+                        setIssuedStartDate("");
+                        setIssuedEndDate("");
+                        setSearchTerm("");
+                      }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold text-violet-600 border border-slate-200/50 hover:border-slate-200 transition-all select-none"
                     >
                       <ArrowLeft className="h-3.5 w-3.5" /> Back to Parties
                     </button>
                     <button
                       onClick={handleGenerateReport}
-                      disabled={isReportGenerating}
+                      disabled={isReportGenerating || filteredIssuedHistory.length === 0}
                       className="flex items-center gap-1.5 px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-100/50 hover:scale-[1.02] active:scale-95 select-none disabled:opacity-75"
                     >
                       {isReportGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Download Report
                     </button>
                   </div>
                   <span className="text-xs font-bold text-slate-500 truncate max-w-full">
-                    Showing records for: <strong className="text-slate-800">{selectedPartyCard}</strong>
+                    Showing records for:{' '}
+                    <strong className="text-slate-800">{selectedPartyCard}</strong>
+                    {[
+                      issuedFilterType && `Type: ${issuedFilterType}`,
+                      issuedFilterItem && `Item: ${issuedFilterItem}`,
+                      searchTerm && `"${searchTerm}"`,
+                      (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
+                    ].filter(Boolean).length > 0 && (
+                      <span className="text-slate-500 font-medium">
+                        {' '}({[
+                          issuedFilterType && `Type: ${issuedFilterType}`,
+                          issuedFilterItem && `Item: ${issuedFilterItem}`,
+                          searchTerm && `"${searchTerm}"`,
+                          (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
+                        ].filter(Boolean).join(' • ')})
+                      </span>
+                    )}
+                    <span className="ml-2 text-violet-600 font-extrabold">({filteredIssuedHistory.length} {filteredIssuedHistory.length === 1 ? 'record' : 'records'})</span>
+                  </span>
+                </div>
+              )}
+
+              {activeTab === 'issued' && !shouldGroup && !selectedPartyCard && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-4 bg-white border-b border-slate-100/80 shrink-0 animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedPartyCard(null);
+                        setIssuedFilterItem("");
+                        setIssuedFilterType("");
+                        setIssuedFilterParty("");
+                        setIssuedStartDate("");
+                        setIssuedEndDate("");
+                        setSearchTerm("");
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold text-violet-600 border border-slate-200/50 hover:border-slate-200 transition-all select-none"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" /> Back to Parties
+                    </button>
+                    <button
+                      onClick={handleGenerateReport}
+                      disabled={isReportGenerating || filteredIssuedHistory.length === 0}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-100/50 hover:scale-[1.02] active:scale-95 select-none disabled:opacity-75"
+                    >
+                      {isReportGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Download Report
+                    </button>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500 truncate max-w-full">
+                    Showing records for:{' '}
+                    <strong className="text-slate-800">
+                      {[
+                        issuedFilterParty && `Party: ${issuedFilterParty}`,
+                        issuedFilterType && `Type: ${issuedFilterType}`,
+                        issuedFilterItem && `Item: ${issuedFilterItem}`,
+                        searchTerm && `"${searchTerm}"`,
+                        (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
+                      ].filter(Boolean).join(' • ') || 'All Filtered Records'}
+                    </strong>
+                    <span className="ml-2 text-violet-600 font-extrabold">({filteredIssuedHistory.length} {filteredIssuedHistory.length === 1 ? 'record' : 'records'})</span>
                   </span>
                 </div>
               )}
@@ -1952,14 +2094,10 @@ const Inventory = () => {
                           type="checkbox"
                           className="w-4 h-4 rounded border-violet-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
                           checked={
-                            (activeTab === 'issued' && shouldGroup && selectedPartyCard)
-                              ? (groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows?.length > 0 && selectedIds.size === groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows?.length)
-                              : (getFilteredHistory().length > 0 && selectedIds.size === getFilteredHistory().length)
+                            getFilteredHistory().length > 0 && selectedIds.size === getFilteredHistory().length
                           }
                           onChange={() =>
-                            (activeTab === 'issued' && shouldGroup && selectedPartyCard)
-                              ? handleSelectAll(groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows || [])
-                              : handleSelectAll(getFilteredHistory())
+                            handleSelectAll(getFilteredHistory())
                           }
                         />
                       </th>
@@ -1973,10 +2111,9 @@ const Inventory = () => {
                       <tr><td colSpan={columnConfig.length + 1} className="py-20 text-center"><div className="flex flex-col items-center gap-3"><Loader2 className="h-10 w-10 animate-spin text-violet-200" /><p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Loading Records...</p></div></td></tr>
                     ) : getFilteredHistory().length === 0 ? (
                       <tr><td colSpan={columnConfig.length + 1} className="py-32 text-center text-slate-300"><Database className="h-12 w-12 mx-auto mb-4 opacity-10" /><p className="text-xs font-bold uppercase tracking-widest">No history found</p></td></tr>
-                    ) : (activeTab === 'issued' && shouldGroup && selectedPartyCard) ? (
+                    ) : (activeTab === 'issued' && selectedPartyCard) ? (
                       (() => {
-                        const partyGroup = groupedIssuedData.find(g => g.partyName === selectedPartyCard);
-                        const displayRows = partyGroup ? partyGroup.rows : [];
+                        const displayRows = filteredIssuedHistory;
                         const paginatedPartyDetailRows = displayRows.slice((partyDetailPage - 1) * PAGE_SIZE, partyDetailPage * PAGE_SIZE);
                         return paginatedPartyDetailRows.map((row) => {
                           const isSelected = selectedIds.has(row.id);
@@ -1989,8 +2126,18 @@ const Inventory = () => {
                               </td>
                               {columnConfig.map(col => visibleColumns[col.key] !== false && (
                                 <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
-                                  {isSelected && col.key === 'qty' ? (
-                                    <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                  {col.key === 'qty' ? (
+                                    isSelected ? (
+                                      <div className="flex items-center justify-center gap-1">
+                                        <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                        {currentData.unit && <span className="text-[10px] font-bold text-slate-400 uppercase">{currentData.unit}</span>}
+                                      </div>
+                                    ) : (
+                                      <span className="font-bold text-slate-700">
+                                        {currentData.qty != null ? currentData.qty : '-'}
+                                        {currentData.unit && <span className="ml-1 text-[10px] font-semibold text-slate-400 uppercase">{currentData.unit}</span>}
+                                      </span>
+                                    )
                                   ) : col.key === 'date' ? (
                                     <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData.createdAt)}</span>
                                   ) : col.key === 'eventDate' ? (
@@ -2059,10 +2206,11 @@ const Inventory = () => {
                               </td>
                               {columnConfig.map(col => visibleColumns[col.key] !== false && (
                                 <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
-                                  {isSelected && activeTab === 'issued' && col.key === 'qty' ? (
-                                    <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
-                                  ) : isSelected && activeTab === 'return' && col.key === 'qty' ? (
-                                    <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                  {isSelected && col.key === 'qty' ? (
+                                    <div className="flex items-center justify-center gap-1">
+                                      <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                      {currentData.unit && <span className="text-[10px] font-bold text-slate-400 uppercase">{currentData.unit}</span>}
+                                    </div>
                                   ) : isSelected && activeTab === 'return' && col.key === 'damage' ? (
                                     isConsumableType(currentData.inventoryType) ? (
                                       <span className="text-slate-350 italic">-</span>
@@ -2100,16 +2248,30 @@ const Inventory = () => {
                                     isConsumableType(currentData.inventoryType) ? (
                                       <span className="text-slate-350 italic">-</span>
                                     ) : (
-                                      <span className="text-red-500 font-bold">{currentData.damage}</span>
+                                      <span className="text-red-500 font-bold">
+                                        {currentData.damage}
+                                        {Number(currentData.damage) > 0 && currentData.unit ? <span className="ml-1 text-[10px] font-semibold text-red-400 uppercase">{currentData.unit}</span> : ''}
+                                      </span>
                                     )
                                   ) : col.key === 'missing' ? (
                                     isConsumableType(currentData.inventoryType) ? (
                                       <span className="text-slate-350 italic">-</span>
                                     ) : (
-                                      <span className="text-orange-500 font-bold">{currentData.missing}</span>
+                                      <span className="text-orange-500 font-bold">
+                                        {currentData.missing}
+                                        {Number(currentData.missing) > 0 && currentData.unit ? <span className="ml-1 text-[10px] font-semibold text-orange-400 uppercase">{currentData.unit}</span> : ''}
+                                      </span>
                                     )
                                   ) : col.key === 'issueQty' ? (
-                                    <span className="font-bold text-slate-700">{currentData.issueQty != null ? currentData.issueQty : '-'}</span>
+                                    <span className="font-bold text-slate-700">
+                                      {currentData.issueQty != null ? currentData.issueQty : '-'}
+                                      {currentData.unit && <span className="ml-1 text-[10px] font-semibold text-slate-400 uppercase">{currentData.unit}</span>}
+                                    </span>
+                                  ) : col.key === 'qty' ? (
+                                    <span className="font-bold text-slate-700">
+                                      {currentData.qty != null ? currentData.qty : '-'}
+                                      {currentData.unit && <span className="ml-1 text-[10px] font-semibold text-slate-400 uppercase">{currentData.unit}</span>}
+                                    </span>
                                   ) : col.key === 'notReturned' ? (
                                     (() => {
                                       if (isConsumableType(currentData.inventoryType)) {
@@ -2118,12 +2280,16 @@ const Inventory = () => {
                                           : Math.max(0, Number(currentData.issueQty || 0) - Number(currentData.qty || 0));
                                         return (
                                           <span className="font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 text-[11px] whitespace-nowrap" title="Consumed at event">
-                                            {consumedVal} consumed
+                                            {consumedVal}{currentData.unit ? ` ${currentData.unit}` : ''} consumed
                                           </span>
                                         );
                                       }
                                       const val = (Number(currentData.damage || 0) + Number(currentData.missing || 0));
-                                      return <span className={`font-bold ${val > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{val}</span>;
+                                      return (
+                                        <span className={`font-bold ${val > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                          {val}{val > 0 && currentData.unit ? ` ${currentData.unit}` : ''}
+                                        </span>
+                                      );
                                     })()
                                   ) : col.key === 'item' ? (
                                     <span className="font-bold text-slate-800">{currentData.itemName}</span>
@@ -2157,10 +2323,10 @@ const Inventory = () => {
                 </table>
               </div>
 
-              {activeTab === 'issued' && shouldGroup && selectedPartyCard ? (
+              {activeTab === 'issued' && selectedPartyCard ? (
                 <Pagination
                   currentPage={partyDetailPage}
-                  totalCount={groupedIssuedData.find(g => g.partyName === selectedPartyCard)?.rows?.length || 0}
+                  totalCount={filteredIssuedHistory.length}
                   pageSize={PAGE_SIZE}
                   onPageChange={setPartyDetailPage}
                   isLoading={isTableLoading}

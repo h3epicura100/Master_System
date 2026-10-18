@@ -18,7 +18,8 @@ import {
   CheckCircle2,
   ShoppingCart,
   Settings2,
-  FileText
+  FileText,
+  Edit3
 } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 import Pagination from "../components/Pagination";
@@ -42,6 +43,8 @@ export default function Stock() {
   const [showFullTotal, setShowFullTotal] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
   const [isColMenuOpen, setIsColMenuOpen] = useState(false);
   const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('purchase'); // 'purchase' or 'repurchase'
@@ -59,8 +62,6 @@ export default function Stock() {
     unitOptions: []
   });
 
-  // Edit State — keyed by row uuid (not a sheet serial number anymore)
-  const [editDataMap, setEditDataMap] = useState({});
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   // Table Filters State
@@ -133,6 +134,23 @@ export default function Stock() {
     imageUrl: ''
   });
 
+  // Form State — Edit Stock / Re-Purchase
+  const [editForm, setEditForm] = useState({
+    itemId: '',
+    inventoryType: '',
+    department: '',
+    itemsName: '',
+    vendorName: '',
+    openingBalance: '',
+    perUnit: '',
+    unit: '',
+    remarks: '',
+    imageUrl: '',
+    date: ''
+  });
+  const [editSelectedImage, setEditSelectedImage] = useState(null);
+  const [editImagePreview, setEditImagePreview] = useState(null);
+
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: '' }), 3000);
@@ -153,71 +171,50 @@ export default function Stock() {
 
   const toggleRowSelection = (row) => {
     const id = row.id;
-    const newSelected = new Set(selectedIds);
-    const newEditMap = { ...editDataMap };
-
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-      delete newEditMap[id];
-    } else {
-      newSelected.add(id);
-      newEditMap[id] = { ...row };
-    }
-    setSelectedIds(newSelected);
-    setEditDataMap(newEditMap);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const handleSelectAll = (filteredRows) => {
     if (selectedIds.size === filteredRows.length && filteredRows.length > 0) {
       setSelectedIds(new Set());
-      setEditDataMap({});
     } else {
-      const newSelected = new Set();
-      const newEditMap = {};
-      filteredRows.forEach(row => {
-        newSelected.add(row.id);
-        newEditMap[row.id] = { ...row };
-      });
-      setSelectedIds(newSelected);
-      setEditDataMap(newEditMap);
+      setSelectedIds(new Set(filteredRows.map(r => r.id)));
     }
   };
 
-  const handleInlineEdit = (id, field, value) => {
-    setEditDataMap(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+  const handleOpenEditModal = (row) => {
+    setEditingRecord(row);
+    const formattedDate = row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : '';
+    setEditForm({
+      itemId: row.item_id || '',
+      inventoryType: row.inventory_type || '',
+      department: row.department || '',
+      itemsName: row.item_name || '',
+      vendorName: row.vendor_name || '',
+      openingBalance: row.qty ?? '',
+      perUnit: row.per_unit ?? '',
+      unit: row.unit || '',
+      remarks: row.remarks || '',
+      imageUrl: row.image_url || '',
+      date: formattedDate
+    });
+    setEditSelectedImage(null);
+    setEditImagePreview(row.image_url || null);
+    setIsEditModalOpen(true);
   };
 
-  const changedRowsCount = useMemo(() => {
-    const currentRows = activeTab === 'purchase' ? stockRows : rePurchaseRows;
-    const editableFields = ['vendor_name', 'qty', 'unit', 'per_unit', 'remarks'];
-    return Object.keys(editDataMap).filter(id => {
-      const editRow = editDataMap[id];
-      const originalRow = currentRows.find(r => r.id === id);
-      if (!originalRow) return false;
-      return editableFields.some(f => String(editRow[f] ?? '') !== String(originalRow[f] ?? ''));
-    }).length;
-  }, [editDataMap, stockRows, rePurchaseRows, activeTab]);
-
-  const handleBatchSubmit = async () => {
-    setIsSubmitting(true);
-    try {
-      const editableFields = ['vendor_name', 'qty', 'unit', 'per_unit', 'remarks'];
-      const results = await Promise.all(Object.entries(editDataMap).map(([id, row]) => {
-        const payload = {};
-        editableFields.forEach(f => { payload[f] = row[f]; });
-        return supabase.from(TABLES.STOCK_TRANSACTIONS).update(payload).eq(COLUMNS.STOCK_TRANSACTIONS.ID, id);
-      }));
-      const failed = results.filter(r => r.error);
-      if (failed.length > 0) throw new Error(failed[0].error.message);
-
-      showToast(`${results.length} record(s) updated successfully`);
-      setEditDataMap({});
-      setSelectedIds(new Set());
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      fetchStockData();
-      setIsSubmitting(false);
+  const handleEditImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setEditSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setEditImagePreview(reader.result);
+      reader.readAsDataURL(file);
     }
   };
 
@@ -239,7 +236,6 @@ export default function Stock() {
       if (failCount > 0) showToast(`Failed to delete ${failCount} record(s)`, 'error');
 
       setSelectedIds(new Set());
-      setEditDataMap({});
       fetchStockData();
     } catch (err) {
       showToast(err.message, 'error');
@@ -623,6 +619,90 @@ export default function Stock() {
     return scoped.length > 0 ? scoped.sort() : dropdownOptions.departmentOptions;
   }, [items, form.inventoryType, dropdownOptions.departmentOptions]);
 
+  const editDepartmentOptions = useMemo(() => {
+    if (!editForm.inventoryType) return dropdownOptions.departmentOptions;
+    const scoped = [...new Set(items.filter(i => i.inventory_type === editForm.inventoryType).map(i => i.department).filter(Boolean))];
+    return scoped.length > 0 ? scoped.sort() : dropdownOptions.departmentOptions;
+  }, [items, editForm.inventoryType, dropdownOptions.departmentOptions]);
+
+  const editItemOptions = useMemo(() => {
+    return items.filter(i =>
+      (!editForm.inventoryType || i.inventory_type === editForm.inventoryType) &&
+      (!editForm.department || i.department === editForm.department)
+    );
+  }, [items, editForm.inventoryType, editForm.department]);
+
+  const handleSelectEditItem = (item) => {
+    setEditForm(prev => ({
+      ...prev,
+      itemId: item.id,
+      itemsName: item.item_name,
+      inventoryType: item.inventory_type || prev.inventoryType,
+      department: item.department || prev.department,
+      unit: item.unit || prev.unit,
+      perUnit: item.damage_price != null ? String(item.damage_price) : prev.perUnit,
+      imageUrl: item.image_url || prev.imageUrl
+    }));
+    if (item.image_url && !editSelectedImage) {
+      setEditImagePreview(item.image_url);
+    }
+  };
+
+  const handleEditSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!editForm.itemId) {
+      showToast('Select an item first.', 'error');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const finalImageUrl = editSelectedImage ? await uploadImage(editSelectedImage) : (editForm.imageUrl || null);
+
+      const payload = {
+        item_id: editForm.itemId,
+        vendor_name: editForm.vendorName?.trim() || null,
+        qty: parseFloat(editForm.openingBalance) || 0,
+        unit: editForm.unit?.trim() || null,
+        per_unit: parseFloat(editForm.perUnit) || 0,
+        remarks: editForm.remarks?.trim() || null,
+        image_url: finalImageUrl
+      };
+
+      if (editForm.date) {
+        const origDate = editingRecord.created_at ? new Date(editingRecord.created_at) : new Date();
+        const [year, month, day] = editForm.date.split('-').map(Number);
+        origDate.setFullYear(year, month - 1, day);
+        payload.created_at = origDate.toISOString();
+      }
+
+      const { error: updateError } = await supabase
+        .from(TABLES.STOCK_TRANSACTIONS)
+        .update(payload)
+        .eq(COLUMNS.STOCK_TRANSACTIONS.ID, editingRecord.id);
+
+      if (updateError) throw updateError;
+
+      // Sync unit, price & photo back to item_master as single source of truth
+      await supabase.from(TABLES.ITEM_MASTER)
+        .update({
+          unit: editForm.unit?.trim() || null,
+          damage_price: parseFloat(editForm.perUnit) || 0,
+          image_url: finalImageUrl || undefined
+        })
+        .eq(COLUMNS.ITEM_MASTER.ID, editForm.itemId);
+
+      showToast('Stock record updated successfully');
+      setIsEditModalOpen(false);
+      setEditingRecord(null);
+      fetchStockData();
+      fetchItems();
+    } catch (err) {
+      showToast(err.message || 'Failed to update record', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const toggleColumn = (key) => {
     setVisibleColumns(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -756,7 +836,7 @@ export default function Stock() {
 
   return (
     <AdminLayout>
-      <div className="min-h-[calc(100vh-42px)] bg-[#f0f2f8] font-sans flex flex-col overflow-hidden">
+      <div className="w-full flex flex-col space-y-4">
 
         {/* Toast */}
         {toast.show && (
@@ -771,9 +851,9 @@ export default function Stock() {
         )}
 
         {/* ── Page-level top bar ── */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-3 sm:px-8 pt-4 sm:pt-6 pb-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-3xl font-bold text-slate-800 tracking-tight">Stock Management</h1>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Stock Management</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
@@ -785,20 +865,6 @@ export default function Stock() {
               >
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 Delete ({selectedIds.size})
-              </button>
-            )}
-            {Object.keys(editDataMap).length > 0 && (
-              <button
-                onClick={handleBatchSubmit}
-                disabled={isSubmitting || changedRowsCount === 0}
-                className={`h-10 px-4 sm:px-6 rounded-lg flex items-center gap-2 text-xs sm:text-sm font-bold transition-all shadow-lg animate-in fade-in zoom-in-95 ${
-                  changedRowsCount > 0
-                  ? "bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100"
-                  : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                }`}
-              >
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Submit {changedRowsCount} {changedRowsCount === 1 ? 'Change' : 'Changes'}
               </button>
             )}
             <div
@@ -840,19 +906,19 @@ export default function Stock() {
         </div>
 
         {/* ── White card wrapping title + filters + table ── */}
-        <div className="mx-2 sm:mx-6 mb-6 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col flex-1 min-h-0 relative">
+        <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col flex-1 min-h-0 relative">
 
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-100/50 rounded-t-xl">
-            <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl shadow-inner-sm self-start lg:self-auto">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-3.5 border-b border-slate-100/80 rounded-t-2xl">
+            <div className="inline-flex p-1 bg-slate-100/80 rounded-xl self-start lg:self-auto">
               <button
                 onClick={() => setActiveTab('purchase')}
-                className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'purchase' ? 'bg-white text-violet-600 shadow-xl shadow-violet-100/50 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'purchase' ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Purchase History
               </button>
               <button
                 onClick={() => setActiveTab('repurchase')}
-                className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'repurchase' ? 'bg-white text-violet-600 shadow-xl shadow-violet-100/50 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'repurchase' ? 'bg-white text-violet-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Re-Purchase History
               </button>
@@ -1024,6 +1090,9 @@ export default function Stock() {
             <table className="w-full text-center border-collapse border-separate border-spacing-0 min-w-[650px]">
               <thead className="sticky top-0 z-20 bg-violet-50">
                 <tr className="bg-violet-50">
+                  <th className="px-3 py-4 w-14 text-center bg-violet-50 border-b border-violet-100 text-[10px] font-bold text-violet-600 uppercase tracking-[0.15em]">
+                    Action
+                  </th>
                   <th className="px-4 py-4 w-12 text-center bg-violet-50 border-b border-violet-100">
                     <input
                       type="checkbox"
@@ -1042,7 +1111,7 @@ export default function Stock() {
               <tbody className="divide-y divide-slate-100">
                 {isTableLoading ? (
                   <tr>
-                    <td colSpan={columnConfig.filter(c => visibleColumns[c.key]).length + 1} className="px-6 py-24 text-center">
+                    <td colSpan={columnConfig.filter(c => visibleColumns[c.key]).length + 2} className="px-6 py-24 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Loading records...</p>
@@ -1051,7 +1120,7 @@ export default function Stock() {
                   </tr>
                 ) : filteredStockRows.length === 0 ? (
                   <tr>
-                    <td colSpan={columnConfig.filter(c => visibleColumns[c.key]).length + 1} className="px-6 py-24 text-center">
+                    <td colSpan={columnConfig.filter(c => visibleColumns[c.key]).length + 2} className="px-6 py-24 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <Database className="h-8 w-8 text-slate-200" />
                         <p className="text-sm font-semibold text-slate-400">No records found</p>
@@ -1061,11 +1130,20 @@ export default function Stock() {
                 ) : (
                   paginatedStockRows.map((row) => {
                     const isSelected = selectedIds.has(row.id);
-                    const currentData = editDataMap[row.id] || row;
-                    const previewCost = (parseFloat(currentData.qty || 0) * parseFloat(currentData.per_unit || 0));
+                    const costPrice = (parseFloat(row.qty || 0) * parseFloat(row.per_unit || 0));
 
                     return (
                       <tr key={row.id} className={`transition-colors duration-100 border-b border-slate-50 last:border-0 ${isSelected ? 'bg-violet-50/50' : 'hover:bg-slate-50/70'}`}>
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(row)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-violet-700 hover:bg-violet-100 transition-colors inline-flex items-center justify-center"
+                            title="Edit Record"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        </td>
                         <td className="px-4 py-3 text-center">
                           <input
                             type="checkbox"
@@ -1077,28 +1155,19 @@ export default function Stock() {
                         {columnConfig.map(col => visibleColumns[col.key] && (
                           <td key={col.key} className="px-4 py-3 text-xs whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] text-center">
                             {col.key === 'balance' ? (
-                              isSelected ? (
-                                <input
-                                  type="number"
-                                  value={currentData.qty}
-                                  onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)}
-                                  className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-                                />
-                              ) : (
-                                <span className="font-bold text-slate-700">{currentData.qty}</span>
-                              )
+                              <span className="font-bold text-slate-700">{row.qty}</span>
                             ) : col.key === 'costPrice' ? (
-                              <span className={`font-bold ${isSelected ? 'text-emerald-600' : 'text-slate-700'}`}>
-                                ₹{previewCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              <span className="font-bold text-slate-700">
+                                ₹{costPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             ) : col.key === 'date' ? (
-                              <span className="text-slate-500 font-medium">{formatDate(currentData.created_at)}</span>
+                              <span className="text-slate-500 font-medium">{formatDate(row.created_at)}</span>
                             ) : col.key === 'image' ? (
-                              currentData.image_url ? (
+                              row.image_url ? (
                                 <div className="flex justify-center">
-                                  <a href={currentData.image_url} target="_blank" rel="noopener noreferrer" className="group relative">
+                                  <a href={row.image_url} target="_blank" rel="noopener noreferrer" className="group relative">
                                     <img
-                                      src={getDisplayableImageUrl(currentData.image_url)}
+                                      src={getDisplayableImageUrl(row.image_url)}
                                       alt="Preview"
                                       className="h-10 w-10 min-w-[40px] rounded-lg object-cover border border-slate-100 shadow-sm group-hover:scale-110 transition-transform duration-200"
                                       onError={(e) => {
@@ -1115,49 +1184,21 @@ export default function Stock() {
                                 <span className="text-slate-300 italic text-[10px]">No Image</span>
                               )
                             ) : col.key === 'item' ? (
-                              <span className="font-bold text-slate-800">{currentData.item_name}</span>
+                              <span className="font-bold text-slate-800">{row.item_name}</span>
                             ) : col.key === 'type' ? (
-                              <span className="text-slate-600">{currentData.inventory_type}</span>
+                              <span className="text-slate-600">{row.inventory_type}</span>
                             ) : col.key === 'dept' ? (
-                              <span className="text-slate-600">{currentData.department}</span>
+                              <span className="text-slate-600">{row.department}</span>
                             ) : col.key === 'vendor' ? (
-                              isSelected ? (
-                                <input
-                                  type="text"
-                                  value={currentData.vendor_name || ''}
-                                  onChange={(e) => handleInlineEdit(row.id, 'vendor_name', e.target.value)}
-                                  className="w-24 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-                                />
-                              ) : (
-                                <span className="text-slate-600">{currentData.vendor_name}</span>
-                              )
+                              <span className="text-slate-600">{row.vendor_name || '—'}</span>
                             ) : col.key === 'unit' ? (
-                              <span className="text-slate-600">{currentData.unit}</span>
+                              <span className="text-slate-600">{row.unit || '—'}</span>
                             ) : col.key === 'perUnit' ? (
-                              isSelected ? (
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={currentData.per_unit}
-                                  onChange={(e) => handleInlineEdit(row.id, 'per_unit', e.target.value)}
-                                  className="w-20 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-blue-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-                                />
-                              ) : (
-                                <span className="font-bold text-blue-600 whitespace-nowrap">₹{parseFloat(currentData.per_unit || 0).toFixed(2)}</span>
-                              )
+                              <span className="font-bold text-blue-600 whitespace-nowrap">₹{parseFloat(row.per_unit || 0).toFixed(2)}</span>
                             ) : col.key === 'remarks' ? (
-                              isSelected ? (
-                                <input
-                                  type="text"
-                                  value={currentData.remarks || ''}
-                                  onChange={(e) => handleInlineEdit(row.id, 'remarks', e.target.value)}
-                                  className="w-28 px-2 py-1 bg-white border border-violet-200 rounded text-center text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-                                />
-                              ) : (
-                                <span className="text-slate-600">{currentData.remarks}</span>
-                              )
+                              <span className="text-slate-600">{row.remarks || '—'}</span>
                             ) : (
-                              <span className="text-slate-600">{currentData[col.key]}</span>
+                              <span className="text-slate-600">{row[col.key] || '—'}</span>
                             )}
                           </td>
                         ))}
@@ -1526,6 +1567,242 @@ export default function Stock() {
                 </button>
               </div>
             </form>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT STOCK RECORD MODAL */}
+        {isEditModalOpen && editingRecord && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 backdrop-blur-[2px] overflow-y-auto">
+            <div
+              className="absolute inset-0 bg-slate-900/30 animate-in fade-in duration-200"
+              onClick={() => !isSubmitting && setIsEditModalOpen(false)}
+            />
+            <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl animate-in zoom-in-95 duration-300 border border-slate-100 max-h-[90vh] flex flex-col overflow-hidden my-auto">
+              <div className="px-4 sm:px-7 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center">
+                    <Edit3 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                      Edit {editingRecord.source === ENUMS.STOCK_SOURCE.RE_PURCHASE ? 'Re-Purchase' : 'Stock'} Record
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      {editingRecord.serial_no ? `Serial: #${editingRecord.serial_no}` : `ID: ${editingRecord.id.slice(0, 8)}...`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  disabled={isSubmitting}
+                  className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-all font-sans"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="px-4 sm:px-7 py-5 space-y-4 max-h-[72vh] overflow-y-auto custom-scrollbar font-sans flex-1">
+                  
+                  {/* Transaction Date */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      Transaction Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.date}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+                      required
+                      className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 outline-none text-sm font-medium text-slate-700 font-sans"
+                    />
+                  </div>
+
+                  {/* Catalog Selectors */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Inventory Type</label>
+                      <SearchableSelect
+                        value={editForm.inventoryType}
+                        onChange={(val) => setEditForm(prev => ({ ...prev, inventoryType: val, department: '', itemsName: '', itemId: '' }))}
+                        options={dropdownOptions.inventoryTypeOptions || []}
+                        placeholder="Select type..."
+                        searchPlaceholder="Search type..."
+                        size="form"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Department</label>
+                      <SearchableSelect
+                        value={editForm.department}
+                        onChange={(val) => setEditForm(prev => ({ ...prev, department: val, itemsName: '', itemId: '' }))}
+                        options={editDepartmentOptions || []}
+                        placeholder="Select department..."
+                        searchPlaceholder="Search department..."
+                        size="form"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Item Name</label>
+                    <SearchableSelect
+                      value={editForm.itemId}
+                      onChange={(val) => {
+                        const item = editItemOptions.find(i => String(i.id) === String(val));
+                        if (item) handleSelectEditItem(item);
+                      }}
+                      options={editItemOptions.map(item => ({
+                        id: item.id,
+                        value: item.id,
+                        label: item.item_name
+                      }))}
+                      disabled={!editForm.inventoryType || !editForm.department}
+                      placeholder={editForm.inventoryType && editForm.department ? "Select item..." : "Select type & department first"}
+                      searchPlaceholder="Search item..."
+                      emptyMessage="No items found."
+                      size="form"
+                    />
+                  </div>
+
+                  {/* Vendor & Unit */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Vendor Name</label>
+                      <input
+                        type="text"
+                        name="vendorName"
+                        value={editForm.vendorName}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, vendorName: e.target.value }))}
+                        required
+                        placeholder="Enter vendor name"
+                        className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 outline-none text-sm font-medium text-slate-700 font-sans"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Unit</label>
+                      <SearchableSelect
+                        value={editForm.unit}
+                        onChange={(val) => setEditForm(prev => ({ ...prev, unit: val }))}
+                        options={dropdownOptions.unitOptions || []}
+                        placeholder="Select unit..."
+                        searchPlaceholder="Search unit..."
+                        size="form"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quantity & Per Unit Price */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Quantity</label>
+                      <input
+                        type="number"
+                        step="any"
+                        onWheel={(e) => e.target.blur()}
+                        name="openingBalance"
+                        value={editForm.openingBalance}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, openingBalance: e.target.value }))}
+                        required
+                        placeholder="e.g. 100"
+                        className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 outline-none text-sm font-medium text-slate-700 font-sans"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Per Unit Price (₹)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        onWheel={(e) => e.target.blur()}
+                        name="perUnit"
+                        value={editForm.perUnit}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, perUnit: e.target.value }))}
+                        required
+                        placeholder="e.g. 25"
+                        className="w-full h-11 px-4 rounded-lg border border-slate-200 focus:border-violet-500 outline-none text-sm font-medium text-slate-700 font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live Total Cost Card */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-emerald-600 uppercase tracking-wide">Total Cost</label>
+                    <div className="w-full h-11 px-4 rounded-lg border border-emerald-100 bg-emerald-50/40 flex items-center text-sm font-bold text-emerald-700">
+                      ₹{(Number(editForm.openingBalance || 0) * Number(editForm.perUnit || 0)).toFixed(2)}
+                    </div>
+                  </div>
+
+                  {/* Attachment / Image */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Attachment (Image)</label>
+                    <div className="h-11">
+                      <input type="file" id="edit-modal-upload" onChange={handleEditImageChange} className="hidden" accept="image/*" />
+                      <label htmlFor="edit-modal-upload" className="flex items-center justify-between px-3 h-full rounded-lg border border-slate-200 hover:border-violet-400 hover:bg-violet-50 transition-all cursor-pointer bg-white">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <UploadCloud className="h-4 w-4 text-slate-300 shrink-0" />
+                          <span className="text-xs font-semibold text-slate-500 truncate">
+                            {editSelectedImage ? "New File Selected" : (editImagePreview ? "Change Existing Photo" : "Click to upload image")}
+                          </span>
+                        </div>
+                        <div className="ml-2 px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-400 uppercase tracking-tighter shrink-0">Browse</div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {editImagePreview && (
+                    <div className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm">
+                      <div className="relative group rounded-lg overflow-hidden bg-slate-50 border border-slate-200 h-44">
+                        <img src={getDisplayableImageUrl(editImagePreview)} alt="Preview" className="w-full h-full object-contain" />
+                        <div className="absolute top-2 right-2">
+                          <button
+                            type="button"
+                            onClick={() => { setEditImagePreview(null); setEditSelectedImage(null); setEditForm(p => ({ ...p, imageUrl: '' })); }}
+                            className="p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg transition-all"
+                            title="Remove Photo"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Remarks */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Remarks (Optional)</label>
+                    <textarea
+                      name="remarks"
+                      value={editForm.remarks}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, remarks: e.target.value }))}
+                      placeholder="Add any notes..."
+                      rows="2"
+                      className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-violet-500 outline-none text-sm font-medium text-slate-700 resize-none font-sans"
+                    />
+                  </div>
+                </div>
+
+                <div className="px-4 sm:px-7 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-5 py-2.5 rounded-lg text-sm font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 transition-all font-sans"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition-all flex items-center gap-2 font-sans shadow-md shadow-violet-200 disabled:opacity-50"
+                  >
+                    {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {isSubmitting ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

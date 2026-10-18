@@ -115,7 +115,8 @@ export function GlobalSettingsPage() {
         u.full_name?.toLowerCase().includes(q) ||
         u.username?.toLowerCase().includes(q) ||
         u.mobile_number?.toLowerCase().includes(q) ||
-        u.role?.toLowerCase().includes(q)
+        u.role?.toLowerCase().includes(q) ||
+        (u.role === 'admin' ? 'admin' : 'staff').includes(q)
     )
   }, [users, userSearch])
 
@@ -269,8 +270,12 @@ export function GlobalSettingsPage() {
                     <div className="min-w-0">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Role & Status</span>
                       <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-extrabold uppercase bg-violet-100 text-violet-700 shrink-0">
-                          {user.role}
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold uppercase shrink-0 ${
+                          user.role === 'admin'
+                            ? 'bg-violet-100 text-violet-700'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {user.role === 'admin' ? 'Admin' : 'Staff'}
                         </span>
                         <button
                           onClick={() => handleToggleStatus(user)}
@@ -382,7 +387,7 @@ export function GlobalSettingsPage() {
                             }`}
                           >
                             <Shield className="w-3 h-3" />
-                            {user.role}
+                            {user.role === 'admin' ? 'Admin' : 'Staff'}
                           </span>
                         </td>
 

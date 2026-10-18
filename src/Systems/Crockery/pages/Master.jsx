@@ -431,25 +431,30 @@ export default function Master() {
 
   return (
     <AdminLayout>
-      <div className="min-h-[calc(100vh-42px)] bg-[#f0f2f8] font-sans px-3 sm:px-8 py-4 sm:py-6">
-        <div className="flex gap-1 mb-4">
-          <button
-            onClick={() => setActiveTab("items")}
-            className={`px-4 sm:px-6 py-2.5 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === "items" ? "bg-white text-violet-600 border-x border-t border-slate-100" : "text-slate-400 hover:text-slate-600"}`}
-          >
-            <Package className="h-3.5 w-3.5" /> Items
-          </button>
-          <button
-            onClick={() => setActiveTab("dropdowns")}
-            className={`px-4 sm:px-6 py-2.5 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === "dropdowns" ? "bg-white text-violet-600 border-x border-t border-slate-100" : "text-slate-400 hover:text-slate-600"}`}
-          >
-            <ListTree className="h-3.5 w-3.5" /> Dropdowns
-          </button>
+      <div className="w-full flex flex-col space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Master Catalog</h1>
+          </div>
+          <div className="inline-flex p-1 bg-slate-100/80 rounded-xl self-start sm:self-auto">
+            <button
+              onClick={() => setActiveTab("items")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === "items" ? "bg-white text-violet-600 shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <Package className="h-3.5 w-3.5" /> Items
+            </button>
+            <button
+              onClick={() => setActiveTab("dropdowns")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${activeTab === "dropdowns" ? "bg-white text-violet-600 shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <ListTree className="h-3.5 w-3.5" /> Dropdowns
+            </button>
+          </div>
         </div>
 
         {activeTab === "items" && (
-          <div className="bg-white rounded-xl rounded-tl-none border border-slate-100 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-100">
+          <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-3.5 border-b border-slate-100/80 rounded-t-2xl">
               <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
                 <div className="relative w-full sm:w-56">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -613,7 +618,7 @@ export default function Master() {
               const displayList = query ? col.list.filter(opt => opt.value.toLowerCase().includes(query)) : col.list;
 
               return (
-                <div key={col.category} className="bg-white rounded-xl rounded-tl-none border border-slate-100 shadow-sm p-4 sm:p-5 flex flex-col">
+                <div key={col.category} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-5 flex flex-col">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-1.5">
                       <h3 className="text-sm font-bold text-slate-800">{col.title}</h3>
