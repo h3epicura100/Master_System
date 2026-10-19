@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { storageService } from './storageService';
 import { authService } from '../features/auth/authService';
+import { pmsRecipientService } from './pmsRecipientService';
 import { formatDateRangeDisplay, formatDateDisplay, formatShortDateDisplay } from '../utils/dateUtils';
 
 const MAYTAPI_PRODUCT_ID = import.meta.env.VITE_MAYTAPI_PRODUCT_ID;
@@ -209,7 +210,7 @@ export const whatsappService = {
     lines.push(``);
     lines.push(divider);
     lines.push(`📎 _Finalized menu attached above_`);
-    lines.push(`🌐 https://h3ms-supabase.vercel.app/`);
+    lines.push(`🌐 https://master-system-nine.vercel.app/`);
     lines.push(`_H3MS (H3 Management System)_`);
 
     return lines.join('\n');
@@ -234,50 +235,33 @@ export const whatsappService = {
     const userPhoneMap = new Map();
     const isTest = this.isTestMode();
 
-    // 1. Fetch all registered user phone numbers (Staff & Admin) from authService / database
+    // 1. Fetch all recipients strictly based on Global Settings master_users:
+    //    - ALL active Admins
+    //    - Staff users who have department pages assigned in H3MS
     try {
-      const users = await authService.loadUsers();
-      if (users && Array.isArray(users)) {
-        users.forEach(u => {
-          const rawNum = u.whatsapp_number || u.whatsappNumber;
-          if (rawNum) {
-            const formatted = normalizePhoneNumber(rawNum);
-            if (formatted) {
-              userPhoneMap.set(formatted, {
-                displayName: u.display_name || u.name || u.id,
-                userId: u.id,
-              });
-              if (!isTest) {
-                recipientSet.add(formatted);
-                console.log(`[WhatsApp Service] Recipient added: ${formatted} (User: ${u.display_name || u.name || u.id}, Role: ${u.role || 'staff'})`);
-              }
-            }
-          }
-        });
-      }
-    } catch (err) {
-      console.warn('[WhatsApp Service] Could not fetch users via authService:', err);
-      try {
-        const { data: dbUsers } = await supabase
-          .from('pms_users')
-          .select('id, display_name, role, whatsapp_number')
-          .not('whatsapp_number', 'is', null);
+      const { recipients: resolvedPhones, recipientDetails } =
+        await pmsRecipientService.getMenuFinalizedRecipients();
 
-        if (dbUsers && Array.isArray(dbUsers)) {
-          dbUsers.forEach(u => {
-            const formatted = normalizePhoneNumber(u.whatsapp_number);
-            if (formatted) {
-              userPhoneMap.set(formatted, {
-                displayName: u.display_name || u.id,
-                userId: u.id,
-              });
-              if (!isTest) recipientSet.add(formatted);
-            }
-          });
+      recipientDetails.forEach((d) => {
+        userPhoneMap.set(d.phone, {
+          displayName: d.displayName,
+          userId: d.userId,
+          role: d.role,
+          matchedReason: d.matchedReason,
+        });
+        if (!isTest) {
+          recipientSet.add(d.phone);
+          console.log(
+            `[WhatsApp Service] Recipient added: ${d.phone} (User: ${d.displayName}, Role: ${d.role}, Reason: ${d.matchedReason})`
+          );
         }
-      } catch (dbErr) {
-        console.warn('[WhatsApp Service] Database query fallback failed:', dbErr);
-      }
+      });
+
+      console.log(
+        `[WhatsApp Service] Resolved ${resolvedPhones.length} Menu Finalize recipient(s) from Global Settings.`
+      );
+    } catch (err) {
+      console.warn('[WhatsApp Service] Could not fetch menu finalize recipients via pmsRecipientService:', err);
     }
 
     const recipients = Array.from(recipientSet);

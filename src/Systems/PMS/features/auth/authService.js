@@ -26,7 +26,7 @@ export const authService = {
       const { data, error } = await supabase
         .from('master_users')
         .select('*')
-        .eq('is_active', true);
+        .neq('is_active', false);
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const pmsUsers = data

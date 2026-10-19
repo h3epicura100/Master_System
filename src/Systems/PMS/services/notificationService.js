@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { whatsappService, normalizePhoneNumber } from './whatsappService.js';
+import { pmsRecipientService } from './pmsRecipientService.js';
 import { DEPT_LIST } from '../constants/departments.js';
 import { getEffectiveDeadline } from '../utils/delayUtils.js';
 import { formatDateRangeDisplay } from '../utils/dateUtils.js';
@@ -96,7 +97,7 @@ export const notificationService = {
       `⏰ *Overdue:* ${overdueText}`,
       divider,
       `⚡ *Action Required:* Please complete your pending department task.`,
-      `🌐 https://h3ms-supabase.vercel.app/`,
+      `🌐 https://master-system-nine.vercel.app/`,
       `_H3MS (H3 Management System)_`,
     ];
 
@@ -104,75 +105,18 @@ export const notificationService = {
   },
 
   /**
-   * Fetches phone numbers strictly mapped to a specific department.
-   * Excludes admin and full_access users (per requirement: admin only receives menu finalized).
+   * Fetches phone numbers strictly mapped to a specific department from Global Settings.
+   * Requirement: Only active Staff users who have that specific department page assigned in H3MS.
+   * Admins are strictly EXCLUDED (Admins do not receive delay reminders).
    */
   async getRecipientsForDepartment(deptKey) {
-    const numbers = new Set();
-
     try {
-      const { data: users, error } = await supabase
-        .from('master_users')
-        .select('id, username, full_name, role, mobile_number, is_active, page_access')
-        .eq('is_active', true);
-
-      if (!error && Array.isArray(users)) {
-        users.forEach(u => {
-          const pa = typeof u.page_access === 'string' ? JSON.parse(u.page_access) : (u.page_access || {});
-          
-          // User must have PMS access
-          if (u.role !== 'admin' && pa.pms?.access !== true) {
-            return;
-          }
-
-          // Requirement: Admins / full access do NOT receive delay messages (only menu finalized)
-          if (u.role === 'admin' || pa.pms?.full_access === true) {
-            return;
-          }
-
-          const perms = Array.isArray(pa.pms?.pages) ? pa.pms.pages : [];
-          if (perms.includes(deptKey)) {
-            const normalized = normalizePhoneNumber(u.mobile_number);
-            if (normalized) {
-              numbers.add(normalized);
-            }
-          }
-        });
-      }
+      const { recipients } = await pmsRecipientService.getDelayReminderRecipients(deptKey);
+      return recipients;
     } catch (e) {
-      console.warn('[NotificationService] Error fetching department recipients from master_users:', e);
+      console.warn('[NotificationService] Error fetching department recipients via pmsRecipientService:', e);
+      return [];
     }
-
-    // Fallback to pms_users if no recipients found in master_users
-    if (numbers.size === 0) {
-      try {
-        const { data: pmsUsers, error: pmsErr } = await supabase
-          .from('pms_users')
-          .select(`
-            id,
-            display_name,
-            role,
-            has_full_access,
-            whatsapp_number,
-            is_active,
-            pms_user_permissions(permission_key)
-          `)
-          .eq('is_active', true);
-
-        if (!pmsErr && Array.isArray(pmsUsers)) {
-          pmsUsers.forEach(u => {
-            if (u.role === 'admin' || u.has_full_access) return;
-            const perms = (u.pms_user_permissions || []).map(p => p.permission_key);
-            if (perms.includes(deptKey)) {
-              const normalized = normalizePhoneNumber(u.whatsapp_number);
-              if (normalized) numbers.add(normalized);
-            }
-          });
-        }
-      } catch (_) {}
-    }
-
-    return Array.from(numbers);
   },
 
   /**
