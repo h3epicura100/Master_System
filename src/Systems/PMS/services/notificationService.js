@@ -66,6 +66,16 @@ function getISTDateParts() {
   return { istDateStr, istHour, istMinute };
 }
 
+function getISTDateString(date) {
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istMs = new Date(date).getTime() + IST_OFFSET_MS;
+  const istDate = new Date(istMs);
+  const year = istDate.getUTCFullYear();
+  const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istDate.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export const notificationService = {
   /**
    * Constructs the WhatsApp delay alert or scheduled reminder text.
@@ -311,13 +321,7 @@ export const notificationService = {
           const alreadySentSlotToday =
             historyForTask.some(h => {
               if (h.type !== targetSlot || h.status !== 'Sent') return false;
-              const sentIst = new Intl.DateTimeFormat('en-IN', {
-                timeZone: 'Asia/Kolkata',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-              }).format(new Date(h.sent_at));
-              return sentIst === istDateStr;
+              return getISTDateString(h.sent_at) === istDateStr;
             }) || memoryNotifCache.has(slotDedupKey);
 
           if (!alreadySentSlotToday) {

@@ -74,6 +74,16 @@ function getISTDateParts(): { istDateStr: string; istHour: number; istMinute: nu
   return { istDateStr, istHour, istMinute };
 }
 
+function getISTDateString(date: Date): string {
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istMs = date.getTime() + IST_OFFSET_MS;
+  const istDate = new Date(istMs);
+  const year = istDate.getUTCFullYear();
+  const month = String(istDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(istDate.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 async function logAlertToChatThread(
   supabase: any,
   phone: string,
@@ -445,19 +455,20 @@ serve(async (req: Request) => {
         const targetSlot = currentReminderSlot || "reminder_11am";
         const alreadySentSlotToday = historyForTask.some((h) => {
           if (h.type !== targetSlot || h.status !== "Sent") return false;
-          const sentIst = new Intl.DateTimeFormat("en-IN", {
-            timeZone: "Asia/Kolkata",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          }).format(new Date(h.sent_at));
-          return sentIst === istDateStr;
+          return getISTDateString(new Date(h.sent_at)) === istDateStr;
         });
 
         if (!alreadySentSlotToday) {
           sendType = targetSlot;
           headerTitle = `⏰ *TASK DELAY REMINDER (${slotLabel || "SCHEDULED"})*`;
         }
+      }
+
+      // STRICT GUARD:
+      // If neither an initial delay nor a scheduled reminder is due right now, SKIP!
+      // This prevents unwanted alerts during off-hours or hourly cron runs.
+      if (!sendType) {
+        continue;
       }
 
       let recipients = deptRecipientsMap.get(task.deptKey) || [];
