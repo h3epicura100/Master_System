@@ -19,6 +19,9 @@ export function HrmsPerformancePage() {
 
   useEffect(() => {
     setStaff(staffStorageService.getStaff())
+    staffStorageService.syncFromSupabase().then((synced) => {
+      if (synced && synced.length > 0) setStaff(synced)
+    })
   }, [])
 
   const departments = useMemo(() => {
@@ -140,18 +143,18 @@ export function HrmsPerformancePage() {
       </div>
 
       {/* Performance Analytics Table */}
-      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50/75 border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                <th className="py-3 px-4">Staff Member</th>
-                <th className="py-3 px-4">Department</th>
-                <th className="py-3 px-4">Daily Avg Hours</th>
-                <th className="py-3 px-4">Punctuality Score</th>
-                <th className="py-3 px-4">TAT Compliance</th>
-                <th className="py-3 px-4">OT Contribution</th>
-                <th className="py-3 px-4 text-right">Performance Tier</th>
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
+        <div className="max-h-[340px] sm:max-h-[calc(100vh-370px)] min-h-[260px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
+          <table className="w-full text-left border-collapse text-xs min-w-[900px]">
+            <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
+              <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Staff Member</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Department</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Daily Avg Hours</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Punctuality Score</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">TAT Compliance</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">OT Contribution</th>
+                <th className="py-3 px-4 text-right bg-slate-50/95 sticky top-0 z-10">Performance Tier</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -236,6 +239,10 @@ export function HrmsPerformancePage() {
                   </tr>
                 )
               })}
+              {/* Bottom buffer row to ensure last row has clean breathing room */}
+              <tr className="h-6">
+                <td colSpan={7} className="p-0 border-0 pointer-events-none"></td>
+              </tr>
             </tbody>
           </table>
         </div>

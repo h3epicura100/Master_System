@@ -16,9 +16,11 @@ export function HrmsApprovalPage() {
   const [advances, setAdvances] = useState([])
   const [staff, setStaff] = useState([])
 
-  const refreshData = () => {
+  const refreshData = async () => {
     setAdvances(staffStorageService.getAdvances())
     setStaff(staffStorageService.getStaff())
+    const synced = await staffStorageService.syncFromSupabase()
+    if (synced && synced.length > 0) setStaff(synced)
   }
 
   useEffect(() => {
@@ -227,19 +229,19 @@ export function HrmsApprovalPage() {
       </div>
 
       {/* Handled History Table */}
-      <div className="space-y-3 pt-2">
+      <div className="space-y-3 pt-2 w-full min-w-0 max-w-full">
         <h4 className="text-sm font-bold text-slate-800">Review History ({handledRequests.length})</h4>
-        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Amount</th>
-                  <th className="py-3 px-4">Monthly EMI</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Reason</th>
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
+          <div className="max-h-[300px] sm:max-h-[360px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
+            <table className="w-full text-left border-collapse text-xs min-w-[850px]">
+              <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
+                <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Employee</th>
+                  <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Amount</th>
+                  <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Monthly EMI</th>
+                  <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Status</th>
+                  <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Date</th>
+                  <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -266,6 +268,10 @@ export function HrmsApprovalPage() {
                     </tr>
                   )
                 })}
+                {/* Bottom buffer row to ensure last row has clean breathing room */}
+                <tr className="h-6">
+                  <td colSpan={6} className="p-0 border-0 pointer-events-none"></td>
+                </tr>
               </tbody>
             </table>
           </div>

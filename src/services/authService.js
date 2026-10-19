@@ -134,6 +134,18 @@ export const authService = {
         mobile_number: mobile_number?.trim() || '',
         page_access: page_access || {},
         is_active: is_active !== false,
+        join_date: payload.join_date || null,
+        base_salary: payload.base_salary !== undefined && payload.base_salary !== null && !isNaN(Number(payload.base_salary)) ? Number(payload.base_salary) : 0,
+        department: payload.department || 'WORKER',
+        designation: payload.designation || 'Staff Worker',
+        custom_designation: payload.custom_designation || '',
+        emergency_contact_name: payload.emergency_contact_name?.trim() || '',
+        emergency_contact_phone: payload.emergency_contact_phone?.trim() || '',
+        aadhar_number: payload.aadhar_number?.trim() || '',
+        aadhar_attachment: payload.aadhar_attachment || '',
+        aadhar_attachment_name: payload.aadhar_attachment_name || '',
+        aadhar_address: payload.aadhar_address?.trim() || '',
+        current_address: payload.current_address?.trim() || '',
       }
 
       const { data, error } = await supabase
@@ -167,6 +179,22 @@ export const authService = {
       if (mobile_number !== undefined) updateData.mobile_number = mobile_number.trim()
       if (page_access !== undefined) updateData.page_access = page_access
       if (is_active !== undefined) updateData.is_active = is_active
+
+      // Dedicated profile columns
+      if (payload.join_date !== undefined) updateData.join_date = payload.join_date || null
+      if (payload.base_salary !== undefined) {
+        updateData.base_salary = payload.base_salary !== null && !isNaN(Number(payload.base_salary)) ? Number(payload.base_salary) : 0
+      }
+      if (payload.department !== undefined) updateData.department = payload.department
+      if (payload.designation !== undefined) updateData.designation = payload.designation
+      if (payload.custom_designation !== undefined) updateData.custom_designation = payload.custom_designation
+      if (payload.emergency_contact_name !== undefined) updateData.emergency_contact_name = payload.emergency_contact_name
+      if (payload.emergency_contact_phone !== undefined) updateData.emergency_contact_phone = payload.emergency_contact_phone
+      if (payload.aadhar_number !== undefined) updateData.aadhar_number = payload.aadhar_number
+      if (payload.aadhar_attachment !== undefined) updateData.aadhar_attachment = payload.aadhar_attachment
+      if (payload.aadhar_attachment_name !== undefined) updateData.aadhar_attachment_name = payload.aadhar_attachment_name
+      if (payload.aadhar_address !== undefined) updateData.aadhar_address = payload.aadhar_address
+      if (payload.current_address !== undefined) updateData.current_address = payload.current_address
 
       const { data, error } = await supabase
         .from('master_users')
@@ -216,6 +244,42 @@ export const authService = {
       if (error) throw error
       return { success: true, user: data }
     } catch (err) {
+      return { success: false, error: err.message }
+    }
+  },
+
+  /**
+   * Upload an Aadhar attachment to the 'aadhar-attachments' Supabase Storage bucket
+   * Returns public URL of the uploaded document
+   */
+  async uploadAadharAttachment(file, username = 'staff') {
+    try {
+      if (!file) return { success: false, error: 'No file provided' }
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const fileName = `${Date.now()}_${username || 'staff'}_${cleanName}`
+      const filePath = `aadhar/${fileName}`
+
+      const { data, error } = await supabase.storage
+        .from('aadhar-attachments')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type || 'application/octet-stream'
+        })
+
+      if (error) throw error
+
+      const { data: publicUrlData } = supabase.storage
+        .from('aadhar-attachments')
+        .getPublicUrl(filePath)
+
+      return {
+        success: true,
+        publicUrl: publicUrlData?.publicUrl || '',
+        fileName: file.name
+      }
+    } catch (err) {
+      console.error('Error uploading aadhar attachment to Supabase Storage:', err)
       return { success: false, error: err.message }
     }
   }

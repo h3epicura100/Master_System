@@ -44,7 +44,6 @@ import { CrockeryMasterPage } from './Systems/Crockery/pages/CrockeryMasterPage'
 
 // HRMS System Pages
 import { HrmsAttendancePage } from './Systems/HRMS/pages/HrmsAttendancePage'
-import { HrmsDirectoryPage } from './Systems/HRMS/pages/HrmsDirectoryPage'
 import { HrmsPerformancePage } from './Systems/HRMS/pages/HrmsPerformancePage'
 import { HrmsAdvancesPage } from './Systems/HRMS/pages/HrmsAdvancesPage'
 import { HrmsApprovalPage } from './Systems/HRMS/pages/HrmsApprovalPage'
@@ -349,11 +348,7 @@ export function App() {
             />
             <Route
               path="/hrms/directory"
-              element={
-                <ProtectedRoute system="hrms" page="directory">
-                  <HrmsDirectoryPage />
-                </ProtectedRoute>
-              }
+              element={<Navigate to="/global-settings" replace />}
             />
             <Route
               path="/hrms/performance"

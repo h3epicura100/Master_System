@@ -83,7 +83,6 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
 
   const hrmsNavItems = [
     { name: 'Daily Attendance', path: '/hrms/attendance', icon: CalendarCheck, show: canAccessPage('hrms', 'attendance'), key: 'attendance' },
-    { name: 'Staff Directory', path: '/hrms/directory', icon: Users, show: canAccessPage('hrms', 'directory'), key: 'directory' },
     { name: 'Performance & TAT', path: '/hrms/performance', icon: TrendingUp, show: canAccessPage('hrms', 'performance'), key: 'performance' },
     { name: 'Salary Advances', path: '/hrms/advances', icon: CreditCard, show: canAccessPage('hrms', 'advances'), key: 'advances' },
     { name: 'Advance Approval', path: '/hrms/approval', icon: CheckSquare, show: canAccessPage('hrms', 'approval'), key: 'approval' },

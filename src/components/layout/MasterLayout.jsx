@@ -74,8 +74,6 @@ export function MasterLayout() {
         return 'Crockery · Master Catalog'
       case '/hrms/attendance':
         return 'HRMS · Daily Attendance'
-      case '/hrms/directory':
-        return 'HRMS · Staff Directory'
       case '/hrms/performance':
         return 'HRMS · Performance & TAT'
       case '/hrms/advances':
@@ -117,7 +115,7 @@ export function MasterLayout() {
           className={`flex-1 flex flex-col min-w-0 w-full ${
             isFullHeightPage
               ? 'min-h-0 overflow-hidden px-2 sm:px-4 lg:px-6 py-2 sm:py-3 max-w-[1680px] mx-auto'
-              : 'px-3 py-3.5 sm:px-6 sm:py-6 lg:px-8 pb-16 overflow-x-hidden'
+              : 'px-3 py-3.5 sm:px-6 sm:py-5 lg:px-8 pb-4 sm:pb-6 overflow-x-hidden'
           }`}
         >
           {isFullHeightPage ? (

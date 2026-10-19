@@ -1,5 +1,6 @@
 // HRMS Local Storage Service
 // Handles persistence for Staff, Attendance, Advances, Overtime, and Payroll
+import { supabase } from '../../../services/supabase'
 
 const KEYS = {
   STAFF: 'h3_hrms_staff',
@@ -83,7 +84,66 @@ const SEED_PAYROLL_ADJUSTMENTS = {
   'emp-1': { present_days: 26.0, half_days: 0, used_leaves: 1.0, incentives: 0, status: 'Hold' }
 }
 
+// Helper to map a master_users row to the HRMS staff format
+export function mapMasterUserToStaff(user) {
+  const profile = user.page_access?.staff_profile || user.page_access?.hrms?.staff_profile || {}
+  const rawDesignation = user.designation || profile.designation
+  const fallbackDesignation = rawDesignation || (user.role === 'admin' ? 'Administrator' : 'Staff Worker')
+  const rawSalary = user.base_salary !== undefined && user.base_salary !== null
+    ? user.base_salary
+    : profile.base_salary
+  const baseSalary = rawSalary !== undefined && rawSalary !== null && !isNaN(Number(rawSalary))
+    ? Number(rawSalary)
+    : 0
+
+  return {
+    id: user.id,
+    name: user.full_name || user.username,
+    username: user.username,
+    mobile: user.mobile_number || '',
+    department: user.department || profile.department || 'WORKER',
+    designation: fallbackDesignation,
+    custom_designation: user.custom_designation || profile.custom_designation || '',
+    base_salary: baseSalary,
+    status: user.is_active !== false ? 'active' : 'inactive',
+    allowed_leaves: 4,
+    join_date: user.join_date || profile.join_date || (user.created_at ? user.created_at.split('T')[0] : getTodayDateStr()),
+    emergency_contact_name: user.emergency_contact_name || profile.emergency_contact_name || '',
+    emergency_contact_phone: user.emergency_contact_phone || profile.emergency_contact_phone || '',
+    aadhar_number: user.aadhar_number || profile.aadhar_number || '',
+    aadhar_attachment: user.aadhar_attachment || profile.aadhar_attachment || '',
+    aadhar_attachment_name: user.aadhar_attachment_name || profile.aadhar_attachment_name || '',
+    aadhar_address: user.aadhar_address || profile.aadhar_address || '',
+    current_address: user.current_address || profile.current_address || '',
+  }
+}
+
 export const staffStorageService = {
+  // Synchronization with Global Settings (master_users)
+  syncFromMasterUsers(masterUsers) {
+    try {
+      if (!Array.isArray(masterUsers) || masterUsers.length === 0) return this.getStaff()
+      const mapped = masterUsers.map(mapMasterUserToStaff)
+      localStorage.setItem(KEYS.STAFF, JSON.stringify(mapped))
+      return mapped
+    } catch (e) {
+      console.warn('Sync staff error:', e)
+      return this.getStaff()
+    }
+  },
+
+  async syncFromSupabase() {
+    try {
+      const { data, error } = await supabase.from('master_users').select('*').order('full_name')
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return this.syncFromMasterUsers(data)
+      }
+    } catch (e) {
+      console.warn('Sync staff from supabase error:', e)
+    }
+    return this.getStaff()
+  },
+
   // Initialization check
   init() {
     try {
@@ -110,12 +170,15 @@ export const staffStorageService = {
       if (!localStorage.getItem(KEYS.PAYROLL_ADJUSTMENTS)) {
         localStorage.setItem(KEYS.PAYROLL_ADJUSTMENTS, JSON.stringify(SEED_PAYROLL_ADJUSTMENTS))
       }
+
+      // Background sync from Supabase
+      this.syncFromSupabase()
     } catch (e) {
       console.error('HRMS storage init error:', e)
     }
   },
 
-  // 1. STAFF DIRECTORY
+  // 1. STAFF DIRECTORY (NOW MANAGED VIA GLOBAL SETTINGS)
   getStaff() {
     try {
       const data = localStorage.getItem(KEYS.STAFF)

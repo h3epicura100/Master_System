@@ -23,9 +23,11 @@ export function HrmsOvertimePage() {
   const [otHoursInput, setOtHoursInput] = useState(2.5)
   const [otReason, setOtReason] = useState('')
 
-  const refreshData = () => {
+  const refreshData = async () => {
     setOvertime(staffStorageService.getOvertime())
     setStaff(staffStorageService.getStaff())
+    const synced = await staffStorageService.syncFromSupabase()
+    if (synced && synced.length > 0) setStaff(synced)
   }
 
   useEffect(() => {
@@ -182,19 +184,19 @@ export function HrmsOvertimePage() {
       </div>
 
       {/* Overtime Table */}
-      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50/75 border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                <th className="py-3 px-4">Employee</th>
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4">OT Hours</th>
-                <th className="py-3 px-4">Base Hourly</th>
-                <th className="py-3 px-4">Calculated Pay</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Task Reason</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
+        <div className="max-h-[340px] sm:max-h-[calc(100vh-370px)] min-h-[260px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
+          <table className="w-full text-left border-collapse text-xs min-w-[950px]">
+            <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
+              <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Employee</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Date</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">OT Hours</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Base Hourly</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Calculated Pay</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Status</th>
+                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Task Reason</th>
+                <th className="py-3 px-4 text-right bg-slate-50/95 sticky top-0 z-10">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -291,6 +293,10 @@ export function HrmsOvertimePage() {
                   </tr>
                 )
               })}
+              {/* Bottom buffer row to ensure last row has clean breathing room */}
+              <tr className="h-6">
+                <td colSpan={8} className="p-0 border-0 pointer-events-none"></td>
+              </tr>
             </tbody>
           </table>
         </div>

@@ -21,7 +21,6 @@ export function HrmsSubNav({ onDataReset }) {
   const pendingOt = overtime.filter((o) => o.status === 'Pending').length
 
   const tabs = [
-    { name: 'Staff Directory', path: '/hrms/directory', icon: Users },
     { name: 'Daily Attendance', path: '/hrms/attendance', icon: CalendarCheck },
     { name: 'Performance & TAT', path: '/hrms/performance', icon: TrendingUp },
     { name: 'Salary Advances', path: '/hrms/advances', icon: CreditCard },

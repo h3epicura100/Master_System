@@ -15,6 +15,7 @@ import {
 import { authService } from '../services/authService'
 import { UserModal } from '../components/ui/UserModal'
 import { useAuth } from '../context/AuthContext'
+import { staffStorageService } from '../Systems/HRMS/services/hrmsStorageService'
 
 export function GlobalSettingsPage() {
   const { currentUser, refreshUser } = useAuth()
@@ -41,6 +42,7 @@ export function GlobalSettingsPage() {
       const res = await authService.fetchAllUsers()
       if (res.success) {
         setUsers(res.users)
+        staffStorageService.syncFromMasterUsers(res.users)
       } else {
         showNotification(res.error || 'Failed to fetch users.', 'error')
       }
@@ -116,6 +118,8 @@ export function GlobalSettingsPage() {
         u.username?.toLowerCase().includes(q) ||
         u.mobile_number?.toLowerCase().includes(q) ||
         u.role?.toLowerCase().includes(q) ||
+        u.designation?.toLowerCase().includes(q) ||
+        u.department?.toLowerCase().includes(q) ||
         (u.role === 'admin' ? 'admin' : 'staff').includes(q)
     )
   }, [users, userSearch])
@@ -229,7 +233,9 @@ export function GlobalSettingsPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-bold text-slate-900 text-sm leading-tight truncate">{user.full_name}</p>
-                        <p className="text-slate-400 text-xs truncate">@{user.username}</p>
+                        <p className="text-slate-400 text-xs truncate">
+                          @{user.username} {(user.designation || pa.staff_profile?.designation) ? `• ${user.designation || pa.staff_profile.designation}` : ''}
+                        </p>
                       </div>
                     </div>
 
@@ -371,7 +377,15 @@ export function GlobalSettingsPage() {
                             </div>
                             <div>
                               <p className="font-bold text-slate-900 leading-snug">{user.full_name}</p>
-                              <p className="text-slate-400 text-[11px]">@{user.username}</p>
+                              <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+                                <span>@{user.username}</span>
+                                {(user.designation || pa.staff_profile?.designation) && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-violet-600 font-semibold">{user.designation || pa.staff_profile.designation}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>

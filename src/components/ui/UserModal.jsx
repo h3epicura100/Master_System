@@ -12,10 +12,132 @@ import {
   Layers,
   KeyRound,
   Phone,
+  PhoneCall,
   Lock,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  CreditCard,
+  Upload,
+  FileCheck,
+  Briefcase,
+  Loader2,
+  ExternalLink
 } from 'lucide-react'
+import { authService } from '../../services/authService'
+
+export const HRMS_DEPARTMENTS = [
+  'WORKER',
+  'KITCHEN',
+  'LOGISTICS',
+  'SERVICE / WAITERS',
+  'MANAGEMENT',
+  'PPF',
+  'SALES',
+  'HOUSEKEEPING',
+]
+
+export const HRMS_DESIGNATIONS = [
+  'Staff Worker',
+  'Head Chef',
+  'Cook / Chef Helper',
+  'Transport Driver',
+  'Staff Attendant',
+  'Floor Manager',
+  'Executive Assistant',
+  'General Helper',
+  'Other',
+]
+
+function FileUploadField({ label, fieldName, fileData, fileName, onFileSelect, onFileRemove, isUploading = false }) {
+  const inputId = `file-input-${fieldName}`
+  const isImage = fileData && typeof fileData === 'string' && (
+    fileData.startsWith('data:image') || 
+    fileData.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || 
+    fileData.includes('aadhar-attachments')
+  )
+  const isUrl = fileData && typeof fileData === 'string' && fileData.startsWith('http')
+
+  return (
+    <div>
+      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+        {label}
+      </label>
+      <div className="flex items-center gap-2.5 p-2 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-slate-50 focus-within:ring-2 focus-within:ring-violet-500/20 focus-within:border-violet-600 transition-all">
+        <label
+          htmlFor={inputId}
+          className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs shrink-0 ${
+            isUploading
+              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+              : 'bg-violet-600/10 hover:bg-violet-600/20 text-violet-700'
+          }`}
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Uploading...</span>
+            </>
+          ) : (
+            <>
+              <Upload className="w-3.5 h-3.5" />
+              <span>{fileName ? 'Change' : 'Upload File'}</span>
+            </>
+          )}
+        </label>
+        <input
+          id={inputId}
+          type="file"
+          accept="image/*,.pdf,.doc,.docx"
+          className="hidden"
+          disabled={isUploading}
+          onChange={(e) => onFileSelect(e, fieldName)}
+        />
+
+        {fileName ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {isImage && (
+              <img
+                src={fileData}
+                alt="preview"
+                className="w-6 h-6 rounded-md object-cover border border-slate-200 shrink-0 shadow-2xs"
+                onError={(e) => { e.target.style.display = 'none' }}
+              />
+            )}
+            <FileCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            {isUrl ? (
+              <a
+                href={fileData}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-violet-700 hover:text-violet-900 font-semibold truncate flex-1 min-w-0 inline-flex items-center gap-1 hover:underline"
+                title="Click to view file in new tab"
+              >
+                <span className="truncate">{fileName}</span>
+                <ExternalLink className="w-3 h-3 shrink-0 opacity-70" />
+              </a>
+            ) : (
+              <span className="text-xs text-slate-800 font-semibold truncate flex-1 min-w-0" title={fileName}>
+                {fileName}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => onFileRemove(fieldName)}
+              className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
+              title="Remove attachment"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400 truncate flex-1 min-w-0 font-medium">
+            No file chosen
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 // Page Definitions for PMS module (24 total: 5 core, 17 departments, 2 master & logs)
 export const PMS_PAGES = [
@@ -58,10 +180,9 @@ export const IMS_PAGES = [
   { id: 'master', name: 'Item Master & Dropdowns', route: '/crockery/master', desc: 'Manage catalogue, rental prices & categories' },
 ]
 
-// Page Definitions for HRMS module (7 pages)
+// Page Definitions for HRMS module (6 pages)
 export const HRMS_PAGES = [
   { id: 'attendance', name: 'Daily Attendance', route: '/hrms/attendance', desc: 'Real-time punch in/out, face photo capture with live GPS stamp' },
-  { id: 'directory', name: 'Staff Directory', route: '/hrms/directory', desc: 'Registered staff profiles, salaries, designations & active status' },
   { id: 'performance', name: 'Performance & TAT', route: '/hrms/performance', desc: 'Employee turnaround times, shift hours, punctuality & consistency' },
   { id: 'advances', name: 'Salary Advances', route: '/hrms/advances', desc: 'Advance disbursement ledger, balance tracking & monthly deductions' },
   { id: 'approval', name: 'Advance Approval', route: '/hrms/approval', desc: 'Manager review & approval pipeline for staff salary loan requests' },
@@ -77,6 +198,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
 
   // Form State
   const [formData, setFormData] = useState({
@@ -86,6 +208,19 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
     role: 'staff',
     mobile_number: '',
     is_active: true,
+    // HRMS Staff Profile & Document Fields
+    join_date: new Date().toISOString().split('T')[0],
+    base_salary: '',
+    department: 'WORKER',
+    designation: 'Staff Worker',
+    custom_designation: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    aadhar_number: '',
+    aadhar_attachment: '',
+    aadhar_attachment_name: '',
+    aadhar_address: '',
+    current_address: '',
     page_access: {
       pete: { access: false, role: 'staff', pages: [] },
       ims: { access: false, role: 'staff', full_access: false, pages: [] },
@@ -98,7 +233,17 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   useEffect(() => {
     if (editingUser) {
       const pAccess = editingUser.page_access || {}
+      const profile = pAccess.staff_profile || pAccess.hrms?.staff_profile || {}
       const userRole = editingUser.role === 'admin' ? 'admin' : 'staff'
+      const rawDesignation = editingUser.designation || profile.designation
+      const isKnownDesignation = HRMS_DESIGNATIONS.includes(rawDesignation)
+      const designationVal = rawDesignation
+        ? (isKnownDesignation ? rawDesignation : 'Other')
+        : (userRole === 'admin' ? 'Floor Manager' : 'Staff Worker')
+      const customDesigVal = isKnownDesignation
+        ? (editingUser.custom_designation || profile.custom_designation || '')
+        : (rawDesignation || '')
+
       setFormData({
         username: editingUser.username || '',
         full_name: editingUser.full_name || '',
@@ -106,6 +251,20 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         role: userRole,
         mobile_number: editingUser.mobile_number || '',
         is_active: editingUser.is_active !== false,
+        join_date: editingUser.join_date || profile.join_date || (editingUser.created_at ? editingUser.created_at.split('T')[0] : ''),
+        base_salary: (editingUser.base_salary !== undefined && editingUser.base_salary !== null)
+          ? editingUser.base_salary
+          : (profile.base_salary !== undefined && profile.base_salary !== null ? profile.base_salary : ''),
+        department: editingUser.department || profile.department || 'WORKER',
+        designation: designationVal,
+        custom_designation: customDesigVal,
+        emergency_contact_name: editingUser.emergency_contact_name || profile.emergency_contact_name || '',
+        emergency_contact_phone: editingUser.emergency_contact_phone || profile.emergency_contact_phone || '',
+        aadhar_number: editingUser.aadhar_number || profile.aadhar_number || '',
+        aadhar_attachment: editingUser.aadhar_attachment || profile.aadhar_attachment || '',
+        aadhar_attachment_name: editingUser.aadhar_attachment_name || profile.aadhar_attachment_name || '',
+        aadhar_address: editingUser.aadhar_address || profile.aadhar_address || '',
+        current_address: editingUser.current_address || profile.current_address || '',
         page_access: {
           pete: {
             access: pAccess.pete?.access || false,
@@ -140,6 +299,18 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         role: 'staff',
         mobile_number: '',
         is_active: true,
+        join_date: new Date().toISOString().split('T')[0],
+        base_salary: '',
+        department: 'WORKER',
+        designation: 'Staff Worker',
+        custom_designation: '',
+        emergency_contact_name: '',
+        emergency_contact_phone: '',
+        aadhar_number: '',
+        aadhar_attachment: '',
+        aadhar_attachment_name: '',
+        aadhar_address: '',
+        current_address: '',
         page_access: {
           pete: { access: false, role: 'staff', pages: [] },
           ims: { access: false, role: 'staff', full_access: false, pages: [] },
@@ -192,6 +363,70 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }))
+  }
+
+  const handleFileSelect = async (e, fieldName) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg('File size exceeds 10MB limit.')
+      return
+    }
+
+    setUploadingFile(true)
+    setErrorMsg('')
+
+    try {
+      const uploadRes = await authService.uploadAadharAttachment(file, formData.username || 'staff')
+      if (uploadRes?.success && uploadRes.publicUrl) {
+        setFormData((prev) => ({
+          ...prev,
+          [fieldName]: uploadRes.publicUrl,
+          [`${fieldName}_name`]: uploadRes.fileName,
+        }))
+      } else {
+        // Fallback to local Base64 Data URL if storage bucket is not configured yet
+        const reader = new FileReader()
+        reader.onload = () => {
+          setFormData((prev) => ({
+            ...prev,
+            [fieldName]: reader.result,
+            [`${fieldName}_name`]: file.name,
+          }))
+        }
+        reader.readAsDataURL(file)
+      }
+    } catch {
+      const reader = new FileReader()
+      reader.onload = () => {
+        setFormData((prev) => ({
+          ...prev,
+          [fieldName]: reader.result,
+          [`${fieldName}_name`]: file.name,
+        }))
+      }
+      reader.readAsDataURL(file)
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
+  const handleFileRemove = (fieldName) => {
+    setFormData((prev) => ({
+      ...prev,
+      [fieldName]: '',
+      [`${fieldName}_name`]: '',
+    }))
+  }
+
+  const handleCopyAadharAddress = () => {
+    if (formData.aadhar_address) {
+      setFormData((prev) => ({
+        ...prev,
+        current_address: prev.aadhar_address,
+      }))
+    }
   }
 
   // Handlers for Permissions
@@ -408,6 +643,10 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
             },
           }
 
+      const effectiveDesignation = formData.designation === 'Other' && formData.custom_designation?.trim()
+        ? formData.custom_designation.trim()
+        : (formData.designation || 'Staff Worker')
+
       const payload = {
         username: formData.username.trim().toLowerCase(),
         full_name: formData.full_name.trim(),
@@ -415,6 +654,18 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         mobile_number: formData.mobile_number?.trim() || '',
         is_active: formData.is_active,
         page_access: pageAccessPayload,
+        join_date: formData.join_date || null,
+        base_salary: formData.base_salary !== '' && !isNaN(Number(formData.base_salary)) ? Number(formData.base_salary) : 0,
+        department: formData.department || 'WORKER',
+        designation: effectiveDesignation,
+        custom_designation: formData.custom_designation || '',
+        emergency_contact_name: formData.emergency_contact_name?.trim() || '',
+        emergency_contact_phone: formData.emergency_contact_phone?.trim() || '',
+        aadhar_number: formData.aadhar_number?.trim() || '',
+        aadhar_attachment: formData.aadhar_attachment || '',
+        aadhar_attachment_name: formData.aadhar_attachment_name || '',
+        aadhar_address: formData.aadhar_address?.trim() || '',
+        current_address: formData.current_address?.trim() || '',
       }
 
       if (formData.password?.trim()) {
@@ -681,6 +932,256 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                       )}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* SECTION: EMPLOYMENT & COMPENSATION (HRMS) */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1 rounded-lg bg-violet-100 text-violet-700">
+                    <Briefcase className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                    Employment & Salary Details
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                  {/* Joining Date */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Joining Date
+                    </label>
+                    <div className="relative">
+                      <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="date"
+                        name="join_date"
+                        value={formData.join_date}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Salary Amount (Monthly) */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Salary Amount (Monthly)
+                    </label>
+                    <div className="relative">
+                      <span className="text-slate-400 font-bold absolute left-3.5 top-1/2 -translate-y-1/2 text-sm">₹</span>
+                      <input
+                        type="number"
+                        name="base_salary"
+                        min="0"
+                        step="100"
+                        placeholder="e.g. 15000"
+                        value={formData.base_salary}
+                        onChange={handleInputChange}
+                        className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Department */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Department
+                    </label>
+                    <div className="relative">
+                      <Briefcase className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <select
+                        name="department"
+                        value={formData.department}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all appearance-none"
+                      >
+                        {HRMS_DEPARTMENTS.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Designation */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Designation
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <select
+                        name="designation"
+                        value={formData.designation}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all appearance-none"
+                      >
+                        {HRMS_DESIGNATIONS.map((desig) => (
+                          <option key={desig} value={desig}>
+                            {desig}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Custom Designation if Other */}
+                  {formData.designation === 'Other' && (
+                    <div className="sm:col-span-2 animate-in fade-in duration-150">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Specify Custom Designation <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="custom_designation"
+                        placeholder="e.g. Master Barista / Site Supervisor"
+                        value={formData.custom_designation}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SECTION: EMERGENCY CONTACT */}
+              <div className="p-3.5 sm:p-4 rounded-xl border border-slate-200/90 bg-slate-50/50 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-lg bg-rose-100 text-rose-700">
+                    <PhoneCall className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                    Emergency Contact
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
+                  {/* Contact Person Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Contact Person Name
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        name="emergency_contact_name"
+                        placeholder="e.g. Ramesh Kumar (Father / Spouse)"
+                        value={formData.emergency_contact_name}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 10-Digit Mobile */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      10-Digit Mobile
+                    </label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="tel"
+                        name="emergency_contact_phone"
+                        maxLength="14"
+                        placeholder="e.g. 9876543210"
+                        value={formData.emergency_contact_phone}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: IDENTITY DOCUMENTS & ADDRESS */}
+              <div className="p-3.5 sm:p-4 rounded-xl border border-slate-200/90 bg-slate-50/50 space-y-3.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-lg bg-indigo-100 text-indigo-700">
+                    <CreditCard className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                    Identity Documents & Address
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                  {/* Aadhar Card Number */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Aadhar Card Number
+                    </label>
+                    <div className="relative">
+                      <CreditCard className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        name="aadhar_number"
+                        maxLength="14"
+                        placeholder="12-digit UIDAI number"
+                        value={formData.aadhar_number}
+                        onChange={handleInputChange}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Aadhar Card Attachment */}
+                  <div>
+                    <FileUploadField
+                      label="Aadhar Card Attachment"
+                      fieldName="aadhar_attachment"
+                      fileData={formData.aadhar_attachment}
+                      fileName={formData.aadhar_attachment_name}
+                      onFileSelect={handleFileSelect}
+                      onFileRemove={handleFileRemove}
+                      isUploading={uploadingFile}
+                    />
+                  </div>
+                </div>
+
+                {/* Aadhar Address */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Aadhar Address
+                  </label>
+                  <textarea
+                    name="aadhar_address"
+                    rows="2"
+                    placeholder="Permanent address as printed on Aadhar card"
+                    value={formData.aadhar_address}
+                    onChange={handleInputChange}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all resize-y"
+                  />
+                </div>
+
+                {/* Current Residential Address */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Current Residential Address
+                    </label>
+                    {formData.aadhar_address && (
+                      <button
+                        type="button"
+                        onClick={handleCopyAadharAddress}
+                        className="text-violet-600 hover:text-violet-700 hover:underline text-[11px] font-bold inline-flex items-center gap-1 transition-colors"
+                      >
+                        Same as Aadhar Address
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    name="current_address"
+                    rows="2"
+                    placeholder="Current residential living address"
+                    value={formData.current_address}
+                    onChange={handleInputChange}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-medium transition-all resize-y"
+                  />
                 </div>
               </div>
             </div>
