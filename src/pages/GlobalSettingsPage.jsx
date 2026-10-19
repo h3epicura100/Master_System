@@ -130,7 +130,7 @@ export function GlobalSettingsPage() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200 w-full min-w-0 max-w-full overflow-hidden">
+    <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200 w-full min-w-0 max-w-full">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
         <div>
@@ -213,9 +213,11 @@ export function GlobalSettingsPage() {
             </div>
           ) : (
             filteredUsers.map((user) => {
+              const isAdmin = user.role === 'admin'
               const pa = user.page_access || {}
-              const hasPms = pa.pms?.access === true
-              const hasIms = pa.ims?.access === true
+              const hasH3ms = isAdmin || pa.pms?.access === true
+              const hasIms = isAdmin || pa.ims?.access === true
+              const hasHrms = isAdmin || pa.hrms?.access === true
 
               return (
                 <div key={user.id} className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200/90 shadow-xs space-y-3 w-full min-w-0">
@@ -295,10 +297,10 @@ export function GlobalSettingsPage() {
                     <div className="flex flex-wrap items-center gap-1 justify-end">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          hasPms ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-300 line-through'
+                          hasH3ms ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-300 line-through'
                         }`}
                       >
-                        PMS
+                        H3MS
                       </span>
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -306,6 +308,13 @@ export function GlobalSettingsPage() {
                         }`}
                       >
                         Crockery
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          hasHrms ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-300 line-through'
+                        }`}
+                      >
+                        HRMS
                       </span>
                     </div>
                   </div>
@@ -317,16 +326,16 @@ export function GlobalSettingsPage() {
 
         {/* DESKTOP VIEW: Full Table (hidden on < md) */}
         <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
-          <div className="overflow-x-auto w-full max-w-full block">
+          <div className="max-h-[65vh] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar">
             <table className="w-full text-left border-collapse min-w-[650px]">
-              <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="py-3.5 px-4">User</th>
-                  <th className="py-3.5 px-4">Contact</th>
-                  <th className="py-3.5 px-4">Master Role</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4">Module Access</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+              <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
+                <tr className="border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3.5 px-4 bg-slate-50/95">User</th>
+                  <th className="py-3.5 px-4 bg-slate-50/95">Contact</th>
+                  <th className="py-3.5 px-4 bg-slate-50/95">Master Role</th>
+                  <th className="py-3.5 px-4 bg-slate-50/95">Status</th>
+                  <th className="py-3.5 px-4 bg-slate-50/95">Module Access</th>
+                  <th className="py-3.5 px-4 text-right bg-slate-50/95">Actions</th>
                 </tr>
               </thead>
 
