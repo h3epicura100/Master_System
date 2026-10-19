@@ -13,8 +13,12 @@ import {
 import { AdvanceRequestModal } from '../components/AdvanceRequestModal'
 import { staffStorageService } from '../services/hrmsStorageService'
 import { formatINR } from '../services/hrmsCalculations'
+import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsAdvancesPage() {
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
+
   const [advances, setAdvances] = useState([])
   const [staff, setStaff] = useState([])
   const [search, setSearch] = useState('')
@@ -40,8 +44,17 @@ export function HrmsAdvancesPage() {
     return map
   }, [staff])
 
-  const filteredAdvances = useMemo(() => {
+  // Data isolation: staff sees only their own advances
+  const userAdvances = useMemo(() => {
+    if (isUserAdmin) return advances
     return advances.filter((adv) => {
+      const emp = staffMap[adv.employee_id]
+      return adv.employee_id === currentUser?.id || emp?.username === currentUser?.username
+    })
+  }, [advances, staffMap, isUserAdmin, currentUser])
+
+  const filteredAdvances = useMemo(() => {
+    return userAdvances.filter((adv) => {
       const emp = staffMap[adv.employee_id]
       if (search.trim()) {
         const q = search.toLowerCase()
@@ -52,11 +65,11 @@ export function HrmsAdvancesPage() {
       if (statusFilter !== 'All Status' && adv.status !== statusFilter) return false
       return true
     })
-  }, [advances, staffMap, search, statusFilter])
+  }, [userAdvances, staffMap, search, statusFilter])
 
   // KPIs
-  const totalAdvanced = advances.reduce((acc, a) => acc + (a.status !== 'Rejected' ? Number(a.amount) || 0 : 0), 0)
-  const totalRecovered = advances.reduce((acc, a) => acc + (Number(a.total_recovered) || 0), 0)
+  const totalAdvanced = userAdvances.reduce((acc, a) => acc + (a.status !== 'Rejected' ? Number(a.amount) || 0 : 0), 0)
+  const totalRecovered = userAdvances.reduce((acc, a) => acc + (Number(a.total_recovered) || 0), 0)
   const remainingBalance = Math.max(0, totalAdvanced - totalRecovered)
   const recoveryPercent = totalAdvanced > 0 ? ((totalRecovered / totalAdvanced) * 100).toFixed(1) : 0
 

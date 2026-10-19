@@ -13,8 +13,12 @@ import {
 import { PayslipModal } from '../components/PayslipModal'
 import { staffStorageService } from '../services/hrmsStorageService'
 import { formatINR, calculateEmployeePayroll } from '../services/hrmsCalculations'
+import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsPayrollPage() {
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
+
   const [staff, setStaff] = useState([])
   const [advances, setAdvances] = useState([])
   const [overtime, setOvertime] = useState([])
@@ -39,9 +43,30 @@ export function HrmsPayrollPage() {
     refreshData()
   }, [])
 
+  // Staff Data Isolation: staff only sees their own payroll
+  const visibleStaff = useMemo(() => {
+    if (isUserAdmin) return staff
+    const userMatches = staff.filter(
+      (s) => s.id === currentUser?.id || s.username === currentUser?.username
+    )
+    if (userMatches.length > 0) return userMatches
+    if (currentUser) {
+      return [{
+        id: currentUser.id,
+        name: currentUser.full_name || currentUser.username,
+        username: currentUser.username,
+        department: currentUser.department || 'WORKER',
+        designation: currentUser.designation || 'Staff Worker',
+        base_salary: currentUser.base_salary || 0,
+        status: 'active'
+      }]
+    }
+    return []
+  }, [staff, isUserAdmin, currentUser])
+
   // Calculate full payroll item for each employee
   const payrollList = useMemo(() => {
-    return staff.map((emp) => {
+    return visibleStaff.map((emp) => {
       const adj = payrollAdjustments[emp.id] || {
         present_days: 30,
         half_days: 0,
@@ -186,7 +211,7 @@ export function HrmsPayrollPage() {
           <table className="w-full text-left border-collapse text-xs min-w-[1050px]">
             <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
               <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Action</th>
+                {isUserAdmin && <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Action</th>}
                 <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Employee</th>
                 <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Department</th>
                 <th className="py-3 px-4 bg-slate-50/95 sticky top-0 z-10">Present Days</th>
@@ -203,19 +228,21 @@ export function HrmsPayrollPage() {
               {displayedList.map(({ emp, adj, advanceEmi, pendingOtHours, calc, status }) => {
                 return (
                   <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
-                    {/* Action Submit */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <button
-                        onClick={() => handleStatusChange(emp.id, status === 'Paid' ? 'Hold' : 'Paid')}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-xs ${
-                          status === 'Paid'
-                            ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        }`}
-                      >
-                        {status === 'Paid' ? 'Revert' : 'Submit'}
-                      </button>
-                    </td>
+                    {/* Action Submit (Admin only) */}
+                    {isUserAdmin && (
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <button
+                          onClick={() => handleStatusChange(emp.id, status === 'Paid' ? 'Hold' : 'Paid')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-xs ${
+                            status === 'Paid'
+                              ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
+                        >
+                          {status === 'Paid' ? 'Revert' : 'Submit'}
+                        </button>
+                      </td>
+                    )}
 
                     {/* Employee */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
@@ -295,21 +322,33 @@ export function HrmsPayrollPage() {
                       {formatINR(calc.netPay)}
                     </td>
 
-                    {/* Status Dropdown */}
+                    {/* Status Dropdown: Restricted to Admin */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
-                      <select
-                        value={status}
-                        onChange={(e) => handleStatusChange(emp.id, e.target.value)}
-                        className={`py-1 px-2.5 rounded-lg text-xs font-bold border transition-colors ${
-                          status === 'Paid'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-800 border-amber-200'
-                        }`}
-                      >
-                        <option value="Hold">Hold</option>
-                        <option value="Approved">Approved</option>
-                        <option value="Paid">Paid</option>
-                      </select>
+                      {isUserAdmin ? (
+                        <select
+                          value={status}
+                          onChange={(e) => handleStatusChange(emp.id, e.target.value)}
+                          className={`py-1 px-2.5 rounded-lg text-xs font-bold border transition-colors ${
+                            status === 'Paid'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          <option value="Hold">Hold</option>
+                          <option value="Approved">Approved</option>
+                          <option value="Paid">Paid</option>
+                        </select>
+                      ) : (
+                        <span
+                          className={`inline-block py-1 px-2.5 rounded-lg text-xs font-bold border ${
+                            status === 'Paid'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          {status}
+                        </span>
+                      )}
                     </td>
 
                     {/* Slip Button */}
@@ -327,7 +366,7 @@ export function HrmsPayrollPage() {
               })}
               {/* Bottom buffer row to ensure last row has clean breathing room */}
               <tr className="h-6">
-                <td colSpan={11} className="p-0 border-0 pointer-events-none"></td>
+                <td colSpan={isUserAdmin ? 11 : 10} className="p-0 border-0 pointer-events-none"></td>
               </tr>
             </tbody>
           </table>

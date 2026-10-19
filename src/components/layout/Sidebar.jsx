@@ -47,11 +47,29 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
   const location = useLocation()
   const pendingCounts = usePendingCounts()
 
+  const isUserAdmin = isAdmin() || currentUser?.role === 'admin'
+
   const hrmsPendingCounts = useMemo(() => {
     try {
-      const advances = staffStorageService.getAdvances()
+      const staffList = staffStorageService.getStaff()
+      const staffMap = {}
+      staffList.forEach((s) => {
+        staffMap[s.id] = s
+      })
+
+      let advances = staffStorageService.getAdvances()
+      let ot = staffStorageService.getOvertime()
+
+      if (!isUserAdmin) {
+        advances = advances.filter(
+          (a) => a.employee_id === currentUser?.id || staffMap[a.employee_id]?.username === currentUser?.username
+        )
+        ot = ot.filter(
+          (o) => o.employee_id === currentUser?.id || staffMap[o.employee_id]?.username === currentUser?.username
+        )
+      }
+
       const pendingAdv = advances.filter((a) => a.status === 'Pending').length
-      const ot = staffStorageService.getOvertime()
       const pendingOt = ot.filter((o) => o.status === 'Pending').length
       return {
         approval: pendingAdv,
@@ -60,7 +78,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
     } catch {
       return {}
     }
-  }, [location.pathname])
+  }, [location.pathname, isUserAdmin, currentUser])
 
   const handleLogout = () => {
     logout()
@@ -83,7 +101,6 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
 
   const hrmsNavItems = [
     { name: 'Daily Attendance', path: '/hrms/attendance', icon: CalendarCheck, show: canAccessPage('hrms', 'attendance'), key: 'attendance' },
-    { name: 'Performance & TAT', path: '/hrms/performance', icon: TrendingUp, show: canAccessPage('hrms', 'performance'), key: 'performance' },
     { name: 'Salary Advances', path: '/hrms/advances', icon: CreditCard, show: canAccessPage('hrms', 'advances'), key: 'advances' },
     { name: 'Advance Approval', path: '/hrms/approval', icon: CheckSquare, show: canAccessPage('hrms', 'approval'), key: 'approval' },
     { name: 'Overtime (OT)', path: '/hrms/overtime', icon: Clock, show: canAccessPage('hrms', 'overtime'), key: 'overtime' },

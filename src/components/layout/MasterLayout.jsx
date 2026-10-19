@@ -74,8 +74,6 @@ export function MasterLayout() {
         return 'Crockery · Master Catalog'
       case '/hrms/attendance':
         return 'HRMS · Daily Attendance'
-      case '/hrms/performance':
-        return 'HRMS · Performance & TAT'
       case '/hrms/advances':
         return 'HRMS · Salary Advances'
       case '/hrms/approval':

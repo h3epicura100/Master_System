@@ -254,7 +254,7 @@ export function PortalDashboard() {
 
                 <h4 className="text-base sm:text-lg font-bold text-slate-900">HRMS System</h4>
                 <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">
-                  Daily Attendance with face & GPS stamp, Staff Directory, Performance & TAT, Salary Advances, OT & Monthly Payroll.
+                  Daily Attendance with face & GPS stamp, Salary Advances, Advance Approval, OT & Monthly Payroll.
                 </p>
 
                 <div className="mt-4 pt-3.5 border-t border-slate-100 space-y-1.5 text-xs">

@@ -11,8 +11,12 @@ import {
 } from 'lucide-react'
 import { staffStorageService } from '../services/hrmsStorageService'
 import { formatINR } from '../services/hrmsCalculations'
+import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsApprovalPage() {
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
+
   const [advances, setAdvances] = useState([])
   const [staff, setStaff] = useState([])
 
@@ -35,19 +39,28 @@ export function HrmsApprovalPage() {
     return map
   }, [staff])
 
+  // Data isolation: staff sees only their own requests
+  const visibleAdvances = useMemo(() => {
+    if (isUserAdmin) return advances
+    return advances.filter((a) => {
+      const emp = staffMap[a.employee_id]
+      return a.employee_id === currentUser?.id || emp?.username === currentUser?.username
+    })
+  }, [advances, staffMap, isUserAdmin, currentUser])
+
   const pendingRequests = useMemo(() => {
-    return advances.filter((a) => a.status === 'Pending')
-  }, [advances])
+    return visibleAdvances.filter((a) => a.status === 'Pending')
+  }, [visibleAdvances])
 
   const handledRequests = useMemo(() => {
-    return advances.filter((a) => a.status !== 'Pending')
-  }, [advances])
+    return visibleAdvances.filter((a) => a.status !== 'Pending')
+  }, [visibleAdvances])
 
   // KPIs
   const pendingCount = pendingRequests.length
   const totalPendingAmount = pendingRequests.reduce((acc, a) => acc + (Number(a.amount) || 0), 0)
-  const approvedCount = advances.filter((a) => a.status === 'Approved').length
-  const rejectedCount = advances.filter((a) => a.status === 'Rejected').length
+  const approvedCount = visibleAdvances.filter((a) => a.status === 'Approved').length
+  const rejectedCount = visibleAdvances.filter((a) => a.status === 'Rejected').length
 
   const handleApprove = (id) => {
     staffStorageService.updateAdvanceStatus(id, 'Approved')
@@ -195,32 +208,42 @@ export function HrmsApprovalPage() {
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
-                    <button
-                      onClick={() => handleApprove(adv.id)}
-                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Approve</span>
-                    </button>
+                  {/* Action Buttons: Only accessible to Admin */}
+                  {isUserAdmin ? (
+                    <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
+                      <button
+                        onClick={() => handleApprove(adv.id)}
+                        className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Approve</span>
+                      </button>
 
-                    <button
-                      onClick={() => handleAdjustAndApprove(adv)}
-                      className="py-2 px-3 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-violet-200"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Adjust EMI</span>
-                    </button>
+                      <button
+                        onClick={() => handleAdjustAndApprove(adv)}
+                        className="py-2 px-3 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-violet-200"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Adjust EMI</span>
+                      </button>
 
-                    <button
-                      onClick={() => handleReject(adv.id)}
-                      className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-rose-200"
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Reject</span>
-                    </button>
-                  </div>
+                      <button
+                        onClick={() => handleReject(adv.id)}
+                        className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 border border-rose-200"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Reject</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Awaiting Manager Approval</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium italic">Read-only</span>
+                    </div>
+                  )}
                 </div>
               )
             })}

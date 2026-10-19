@@ -17,8 +17,12 @@ import {
 } from 'lucide-react'
 import { AttendanceModal } from '../components/AttendanceModal'
 import { staffStorageService } from '../services/hrmsStorageService'
+import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsAttendancePage() {
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
+
   const [attendance, setAttendance] = useState([])
   const [staff, setStaff] = useState([])
   const [search, setSearch] = useState('')
@@ -42,15 +46,36 @@ export function HrmsAttendancePage() {
     refreshData()
   }, [])
 
+  // Staff Data Isolation: staff only sees their own employee profile
+  const visibleStaff = useMemo(() => {
+    if (isUserAdmin) return staff
+    const userMatches = staff.filter(
+      (s) => s.id === currentUser?.id || s.username === currentUser?.username
+    )
+    if (userMatches.length > 0) return userMatches
+    if (currentUser) {
+      return [{
+        id: currentUser.id,
+        name: currentUser.full_name || currentUser.username,
+        username: currentUser.username,
+        department: currentUser.department || 'WORKER',
+        designation: currentUser.designation || 'Staff Worker',
+        base_salary: currentUser.base_salary || 0,
+        status: 'active'
+      }]
+    }
+    return []
+  }, [staff, isUserAdmin, currentUser])
+
   // Departments list for dropdown
   const departments = useMemo(() => {
-    const depts = new Set(staff.map((s) => s.department).filter(Boolean))
+    const depts = new Set(visibleStaff.map((s) => s.department).filter(Boolean))
     return ['All Departments', ...Array.from(depts)]
-  }, [staff])
+  }, [visibleStaff])
 
   // Filtered attendance records joined with staff profile
   const records = useMemo(() => {
-    return staff.map((emp) => {
+    return visibleStaff.map((emp) => {
       const att = attendance.find((a) => a.employee_id === emp.id && (!dateFilter || a.date === dateFilter))
       return {
         emp,
@@ -71,7 +96,7 @@ export function HrmsAttendancePage() {
       // Search
       if (search.trim()) {
         const q = search.toLowerCase()
-        const matchesName = emp.name.toLowerCase().includes(q)
+        const matchesName = emp.name?.toLowerCase().includes(q)
         const matchesDesig = emp.designation?.toLowerCase().includes(q)
         if (!matchesName && !matchesDesig) return false
       }
@@ -81,12 +106,12 @@ export function HrmsAttendancePage() {
       if (selectedStatus !== 'All Status' && att.status !== selectedStatus) return false
       return true
     })
-  }, [staff, attendance, search, selectedDept, selectedStatus, dateFilter])
+  }, [visibleStaff, attendance, search, selectedDept, selectedStatus, dateFilter])
 
   // KPI Calculations
-  const totalStaffCount = staff.length
+  const totalStaffCount = visibleStaff.length
   const presentCount = records.filter(({ att }) => att.status === 'Checked IN' || att.status === 'Checked OUT').length
-  const absentCount = totalStaffCount - presentCount
+  const absentCount = Math.max(0, totalStaffCount - presentCount)
 
   // Quick Action Handlers
   const handleQuickIn = (empId) => {
@@ -238,7 +263,7 @@ export function HrmsAttendancePage() {
 
         {/* Right: Record Attendance Button */}
         <button
-          onClick={() => handleOpenPunchModal(null, 'in')}
+          onClick={() => handleOpenPunchModal(isUserAdmin ? null : visibleStaff[0]?.id, 'in')}
           className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-md shadow-violet-200 transition-all flex items-center justify-center gap-2 shrink-0"
         >
           <Camera className="w-4 h-4" />
@@ -311,7 +336,7 @@ export function HrmsAttendancePage() {
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
 
-                          {att.id && !att.id.startsWith('virtual-') && (
+                          {isUserAdmin && att.id && !att.id.startsWith('virtual-') && (
                             <button
                               onClick={() => handleDelete(att.id)}
                               title="Delete punch"

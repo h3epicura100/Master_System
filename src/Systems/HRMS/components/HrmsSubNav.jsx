@@ -3,7 +3,6 @@ import { NavLink } from 'react-router-dom'
 import {
   Users,
   CalendarCheck,
-  TrendingUp,
   CreditCard,
   CheckSquare,
   Clock,
@@ -11,18 +10,35 @@ import {
   RotateCcw
 } from 'lucide-react'
 import { staffStorageService } from '../services/hrmsStorageService'
+import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsSubNav({ onDataReset }) {
-  // Check pending counts for badges
-  const advances = staffStorageService.getAdvances()
-  const pendingAdvances = advances.filter((a) => a.status === 'Pending').length
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
 
-  const overtime = staffStorageService.getOvertime()
+  const staffList = staffStorageService.getStaff()
+  const staffMap = {}
+  staffList.forEach((s) => {
+    staffMap[s.id] = s
+  })
+
+  let advances = staffStorageService.getAdvances()
+  let overtime = staffStorageService.getOvertime()
+
+  if (!isUserAdmin) {
+    advances = advances.filter(
+      (a) => a.employee_id === currentUser?.id || staffMap[a.employee_id]?.username === currentUser?.username
+    )
+    overtime = overtime.filter(
+      (o) => o.employee_id === currentUser?.id || staffMap[o.employee_id]?.username === currentUser?.username
+    )
+  }
+
+  const pendingAdvances = advances.filter((a) => a.status === 'Pending').length
   const pendingOt = overtime.filter((o) => o.status === 'Pending').length
 
   const tabs = [
     { name: 'Daily Attendance', path: '/hrms/attendance', icon: CalendarCheck },
-    { name: 'Performance & TAT', path: '/hrms/performance', icon: TrendingUp },
     { name: 'Salary Advances', path: '/hrms/advances', icon: CreditCard },
     {
       name: 'Advance Approval',

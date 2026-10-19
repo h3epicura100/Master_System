@@ -10,8 +10,12 @@ import {
 } from 'lucide-react'
 import { staffStorageService } from '../services/hrmsStorageService'
 import { formatINR, calculateOtPay, calculateHourlyRate } from '../services/hrmsCalculations'
+import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsOvertimePage() {
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
+
   const [overtime, setOvertime] = useState([])
   const [staff, setStaff] = useState([])
   const [search, setSearch] = useState('')
@@ -42,8 +46,17 @@ export function HrmsOvertimePage() {
     return map
   }, [staff])
 
-  const filteredOt = useMemo(() => {
+  // Data isolation: staff sees only their own OT logs
+  const visibleOt = useMemo(() => {
+    if (isUserAdmin) return overtime
     return overtime.filter((ot) => {
+      const emp = staffMap[ot.employee_id]
+      return ot.employee_id === currentUser?.id || emp?.username === currentUser?.username
+    })
+  }, [overtime, staffMap, isUserAdmin, currentUser])
+
+  const filteredOt = useMemo(() => {
+    return visibleOt.filter((ot) => {
       const emp = staffMap[ot.employee_id]
       if (search.trim()) {
         const q = search.toLowerCase()
@@ -54,12 +67,12 @@ export function HrmsOvertimePage() {
       if (statusFilter !== 'All Status' && ot.status !== statusFilter) return false
       return true
     })
-  }, [overtime, staffMap, search, statusFilter])
+  }, [visibleOt, staffMap, search, statusFilter])
 
   // KPIs
-  const totalOtHours = overtime.reduce((acc, o) => acc + (Number(o.hours) || 0), 0)
-  const approvedOt = overtime.filter((o) => o.status === 'Approved')
-  const pendingOtCount = overtime.filter((o) => o.status === 'Pending').length
+  const totalOtHours = visibleOt.reduce((acc, o) => acc + (Number(o.hours) || 0), 0)
+  const approvedOt = visibleOt.filter((o) => o.status === 'Approved')
+  const pendingOtCount = visibleOt.filter((o) => o.status === 'Pending').length
   const totalApprovedPayout = approvedOt.reduce((acc, o) => {
     const emp = staffMap[o.employee_id] || { base_salary: 12000 }
     return acc + calculateOtPay(o.hours, emp.base_salary)
@@ -171,16 +184,18 @@ export function HrmsOvertimePage() {
           </select>
         </div>
 
-        <button
-          onClick={() => {
-            setSelectedEmpId(staff[0]?.id || '')
-            setModalOpen(true)
-          }}
-          className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-md shadow-violet-200 transition-all flex items-center justify-center gap-2 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Log Overtime Hours</span>
-        </button>
+        {isUserAdmin && (
+          <button
+            onClick={() => {
+              setSelectedEmpId(staff[0]?.id || '')
+              setModalOpen(true)
+            }}
+            className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-md shadow-violet-200 transition-all flex items-center justify-center gap-2 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Log Overtime Hours</span>
+          </button>
+        )}
       </div>
 
       {/* Overtime Table */}
@@ -268,26 +283,32 @@ export function HrmsOvertimePage() {
                       {ot.reason || 'Overtime support'}
                     </td>
 
-                    {/* Actions */}
+                    {/* Actions: Approvals restricted to Admin */}
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      {isPending ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleApprove(ot.id)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1"
-                          >
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Approve</span>
-                          </button>
-                          <button
-                            onClick={() => handleReject(ot.id)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </div>
+                      {isUserAdmin ? (
+                        isPending ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleApprove(ot.id)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Approve</span>
+                            </button>
+                            <button
+                              onClick={() => handleReject(ot.id)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-medium italic">Reviewed</span>
+                        )
                       ) : (
-                        <span className="text-[11px] text-slate-400 font-medium italic">Reviewed</span>
+                        <span className="text-[11px] text-slate-400 font-medium italic">
+                          {isPending ? 'Pending Approval' : 'Reviewed'}
+                        </span>
                       )}
                     </td>
                   </tr>

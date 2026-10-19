@@ -10,12 +10,19 @@ import {
 } from 'lucide-react'
 import { staffStorageService } from '../services/hrmsStorageService'
 import { formatINR } from '../services/hrmsCalculations'
+import { useAuth } from '../../../context/AuthContext'
 
 export function AdvanceRequestModal({ isOpen, onClose, onSave }) {
-  const staff = staffStorageService.getStaff()
-  const activeStaff = staff
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
 
-  const [employeeId, setEmployeeId] = useState(activeStaff[0]?.id || '')
+  const staff = staffStorageService.getStaff()
+  const activeStaff = isUserAdmin
+    ? staff
+    : staff.filter((s) => s.id === currentUser?.id || s.username === currentUser?.username)
+
+  const defaultEmpId = activeStaff[0]?.id || currentUser?.id || ''
+  const [employeeId, setEmployeeId] = useState(defaultEmpId)
   const [amount, setAmount] = useState(5000)
   const [monthlyEmi, setMonthlyEmi] = useState(1000)
   const [reason, setReason] = useState('')
@@ -103,9 +110,12 @@ export function AdvanceRequestModal({ isOpen, onClose, onSave }) {
               <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <select
                 required
+                disabled={!isUserAdmin}
                 value={employeeId}
                 onChange={(e) => setEmployeeId(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 text-sm font-semibold transition-all appearance-none"
+                className={`w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold transition-all appearance-none ${
+                  !isUserAdmin ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : 'bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600'
+                }`}
               >
                 {activeStaff.map((emp) => (
                   <option key={emp.id} value={emp.id}>

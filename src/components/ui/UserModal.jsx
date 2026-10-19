@@ -180,10 +180,9 @@ export const IMS_PAGES = [
   { id: 'master', name: 'Item Master & Dropdowns', route: '/crockery/master', desc: 'Manage catalogue, rental prices & categories' },
 ]
 
-// Page Definitions for HRMS module (6 pages)
+// Page Definitions for HRMS module (5 pages)
 export const HRMS_PAGES = [
   { id: 'attendance', name: 'Daily Attendance', route: '/hrms/attendance', desc: 'Real-time punch in/out, face photo capture with live GPS stamp' },
-  { id: 'performance', name: 'Performance & TAT', route: '/hrms/performance', desc: 'Employee turnaround times, shift hours, punctuality & consistency' },
   { id: 'advances', name: 'Salary Advances', route: '/hrms/advances', desc: 'Advance disbursement ledger, balance tracking & monthly deductions' },
   { id: 'approval', name: 'Advance Approval', route: '/hrms/approval', desc: 'Manager review & approval pipeline for staff salary loan requests' },
   { id: 'overtime', name: 'Overtime (OT)', route: '/hrms/overtime', desc: 'Extra work hours tracking, OT verification, approval & hourly pay' },
@@ -1431,7 +1430,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                           {formData.page_access.hrms?.full_access ? HRMS_PAGES.length : (formData.page_access.hrms?.pages || []).length}/{HRMS_PAGES.length} Selected
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-500">Daily Attendance, Directory, Performance TAT, Advances & Payroll</p>
+                      <p className="text-[11px] text-slate-500">Daily Attendance, Salary Advances, Advance Approval, OT & Monthly Payroll</p>
                     </div>
                   </div>
 
