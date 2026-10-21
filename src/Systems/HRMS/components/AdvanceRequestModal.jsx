@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   X,
   CreditCard,
@@ -8,21 +8,23 @@ import {
   AlertCircle,
   Check
 } from 'lucide-react'
-import { staffStorageService } from '../services/hrmsStorageService'
+import { hrmsService } from '../services/hrmsService'
 import { formatINR } from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
 
-export function AdvanceRequestModal({ isOpen, onClose, onSave }) {
-  const { currentUser, isAdmin, getModuleRole } = useAuth()
-  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
+export function AdvanceRequestModal({ isOpen, onClose, onSave, staff = [] }) {
+  const { currentUser } = useAuth()
+  const activeStaff = staff
 
-  const staff = staffStorageService.getStaff()
-  const activeStaff = isUserAdmin
-    ? staff
-    : staff.filter((s) => s.id === currentUser?.id || s.username === currentUser?.username)
+  const [employeeId, setEmployeeId] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const defaultEmpId = activeStaff[0]?.id || currentUser?.id || ''
-  const [employeeId, setEmployeeId] = useState(defaultEmpId)
+  // Default the selection once staff has loaded / the modal opens
+  useEffect(() => {
+    if (isOpen && !activeStaff.some((s) => s.id === employeeId)) {
+      setEmployeeId(activeStaff[0]?.id || currentUser?.id || '')
+    }
+  }, [isOpen, activeStaff, employeeId, currentUser])
   const [amount, setAmount] = useState(5000)
   const [monthlyEmi, setMonthlyEmi] = useState(1000)
   const [reason, setReason] = useState('')
@@ -32,8 +34,9 @@ export function AdvanceRequestModal({ isOpen, onClose, onSave }) {
   const monthlySalary = selectedEmp ? Number(selectedEmp.base_salary) || 0 : 0
   const maxAdvance = monthlySalary
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    if (saving) return
     setErrorMsg('')
 
     if (!employeeId) {
@@ -53,15 +56,22 @@ export function AdvanceRequestModal({ isOpen, onClose, onSave }) {
       return
     }
 
-    staffStorageService.requestAdvance({
-      employee_id: employeeId,
-      amount,
-      monthly_emi: monthlyEmi,
-      reason
-    })
-
-    if (onSave) onSave()
-    onClose()
+    setSaving(true)
+    try {
+      await hrmsService.requestAdvance({
+        employee_id: employeeId,
+        amount,
+        monthly_emi: monthlyEmi,
+        reason
+      })
+      setReason('')
+      if (onSave) onSave()
+      onClose()
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to submit advance request.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!isOpen) return null
@@ -203,10 +213,11 @@ export function AdvanceRequestModal({ isOpen, onClose, onSave }) {
 
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2"
+              disabled={saving}
+              className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Check className="w-4 h-4" />
-              <span>Submit Request</span>
+              <span>{saving ? 'Submitting...' : 'Submit Request'}</span>
             </button>
           </div>
         </form>

@@ -25,6 +25,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 import { authService } from '../../services/authService'
+import { timestamptzToDate } from '../../Systems/HRMS/services/hrmsCalculations'
 
 export const HRMS_DEPARTMENTS = [
   'WORKER',
@@ -250,7 +251,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         role: userRole,
         mobile_number: editingUser.mobile_number || '',
         is_active: editingUser.is_active !== false,
-        join_date: editingUser.join_date || profile.join_date || (editingUser.created_at ? editingUser.created_at.split('T')[0] : ''),
+        join_date: timestamptzToDate(editingUser.join_date || profile.join_date) || (editingUser.created_at ? timestamptzToDate(editingUser.created_at) : ''),
         base_salary: (editingUser.base_salary !== undefined && editingUser.base_salary !== null)
           ? editingUser.base_salary
           : (profile.base_salary !== undefined && profile.base_salary !== null ? profile.base_salary : ''),

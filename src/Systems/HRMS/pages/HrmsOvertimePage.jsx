@@ -8,8 +8,8 @@ import {
   Banknote,
   AlertCircle
 } from 'lucide-react'
-import { staffStorageService } from '../services/hrmsStorageService'
-import { formatINR, calculateOtPay, calculateHourlyRate } from '../services/hrmsCalculations'
+import { hrmsService } from '../services/hrmsService'
+import { formatINR, calculateOtPay, calculateHourlyRate, toLocalDateStr } from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsOvertimePage() {
@@ -26,17 +26,26 @@ export function HrmsOvertimePage() {
   const [selectedEmpId, setSelectedEmpId] = useState('')
   const [otHoursInput, setOtHoursInput] = useState(2.5)
   const [otReason, setOtReason] = useState('')
+  const [otDate, setOtDate] = useState(toLocalDateStr())
+  const [saving, setSaving] = useState(false)
 
   const refreshData = async () => {
-    setOvertime(staffStorageService.getOvertime())
-    setStaff(staffStorageService.getStaff())
-    const synced = await staffStorageService.syncFromSupabase()
-    if (synced && synced.length > 0) setStaff(synced)
+    try {
+      const [ot, staffList] = await Promise.all([
+        hrmsService.getOvertime({ employeeId: isUserAdmin ? undefined : currentUser?.id }),
+        hrmsService.getStaff()
+      ])
+      setOvertime(ot)
+      setStaff(staffList)
+    } catch (e) {
+      console.error('Load overtime error:', e)
+      alert(`Failed to load overtime: ${e.message}`)
+    }
   }
 
   useEffect(() => {
     refreshData()
-  }, [])
+  }, [isUserAdmin, currentUser?.id])
 
   const staffMap = useMemo(() => {
     const map = {}
@@ -74,33 +83,45 @@ export function HrmsOvertimePage() {
   const approvedOt = visibleOt.filter((o) => o.status === 'Approved')
   const pendingOtCount = visibleOt.filter((o) => o.status === 'Pending').length
   const totalApprovedPayout = approvedOt.reduce((acc, o) => {
-    const emp = staffMap[o.employee_id] || { base_salary: 12000 }
+    const emp = staffMap[o.employee_id] || { base_salary: 0 }
     return acc + calculateOtPay(o.hours, emp.base_salary)
   }, 0)
 
-  const handleApprove = (id) => {
-    staffStorageService.updateOvertimeStatus(id, 'Approved')
-    refreshData()
-  }
-
-  const handleReject = (id) => {
-    if (window.confirm('Reject this overtime entry?')) {
-      staffStorageService.updateOvertimeStatus(id, 'Rejected')
-      refreshData()
+  const review = async (id, status) => {
+    try {
+      await hrmsService.reviewOvertime(id, status, currentUser?.id || null)
+      await refreshData()
+    } catch (e) {
+      alert(`Failed to update overtime: ${e.message}`)
     }
   }
 
-  const handleLogOt = (e) => {
+  const handleApprove = (id) => review(id, 'Approved')
+
+  const handleReject = (id) => {
+    if (window.confirm('Reject this overtime entry?')) review(id, 'Rejected')
+  }
+
+  const handleLogOt = async (e) => {
     e.preventDefault()
-    if (!selectedEmpId || otHoursInput <= 0) return
-    staffStorageService.logOvertime({
-      employee_id: selectedEmpId,
-      hours: otHoursInput,
-      reason: otReason
-    })
-    setModalOpen(false)
-    setOtReason('')
-    refreshData()
+    if (!selectedEmpId || otHoursInput <= 0 || otHoursInput > 24 || saving) return
+    setSaving(true)
+    try {
+      await hrmsService.logOvertime({
+        employee_id: selectedEmpId,
+        date: otDate,
+        hours: otHoursInput,
+        reason: otReason,
+        logged_by: currentUser?.id || null
+      })
+      setModalOpen(false)
+      setOtReason('')
+      await refreshData()
+    } catch (err) {
+      alert(`Failed to log overtime: ${err.message}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const getInitials = (name) => {
@@ -188,6 +209,7 @@ export function HrmsOvertimePage() {
           <button
             onClick={() => {
               setSelectedEmpId(staff[0]?.id || '')
+              setOtDate(toLocalDateStr())
               setModalOpen(true)
             }}
             className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-md shadow-violet-200 transition-all flex items-center justify-center gap-2 shrink-0"
@@ -216,7 +238,7 @@ export function HrmsOvertimePage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredOt.map((ot) => {
-                const emp = staffMap[ot.employee_id] || { name: 'Staff Member', department: 'WORKER', base_salary: 12000 }
+                const emp = staffMap[ot.employee_id] || { name: 'Former Staff', department: '—', base_salary: 0 }
                 const hourlyRate = calculateHourlyRate(emp.base_salary)
                 const computedOtPay = calculateOtPay(ot.hours, emp.base_salary)
                 const isPending = ot.status === 'Pending'
@@ -354,6 +376,20 @@ export function HrmsOvertimePage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  max={toLocalDateStr()}
+                  value={otDate}
+                  onChange={(e) => setOtDate(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-sm font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Overtime Hours
                 </label>
                 <input
@@ -390,9 +426,10 @@ export function HrmsOvertimePage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200"
+                  disabled={saving}
+                  className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 disabled:opacity-60"
                 >
-                  Save Entry
+                  {saving ? 'Saving...' : 'Save Entry'}
                 </button>
               </div>
             </form>

@@ -2,7 +2,7 @@ import React, { useRef } from 'react'
 import { X, Printer, Download, Banknote, Building2 } from 'lucide-react'
 import { formatINR, numberToWordsINR } from '../services/hrmsCalculations'
 
-export function PayslipModal({ isOpen, onClose, payrollItem, month = 'October 2026' }) {
+export function PayslipModal({ isOpen, onClose, payrollItem, month = '', slipSuffix = '' }) {
   const printRef = useRef(null)
 
   if (!isOpen || !payrollItem) return null
@@ -66,7 +66,7 @@ export function PayslipModal({ isOpen, onClose, payrollItem, month = 'October 20
                 Payslip
               </span>
               <p className="text-sm font-bold text-slate-900 mt-1.5">{month}</p>
-              <p className="text-[11px] text-slate-400 font-mono">SLIP-{employee.id.toUpperCase()}-OCT26</p>
+              <p className="text-[11px] text-slate-400 font-mono">SLIP-{employee.id.slice(0, 8).toUpperCase()}-{slipSuffix}</p>
             </div>
           </div>
 

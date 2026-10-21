@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -39,7 +39,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { usePendingCounts } from '../../Systems/PMS/hooks/usePendingCounts'
-import { staffStorageService } from '../../Systems/HRMS/services/hrmsStorageService'
+import { useHrmsPendingCounts } from '../../Systems/HRMS/hooks/useHrmsPendingCounts'
 
 export function Sidebar({ mobileOpen, setMobileOpen }) {
   const { currentUser, isAdmin, canAccessSystem, canAccessPage, logout } = useAuth()
@@ -49,36 +49,11 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
 
   const isUserAdmin = isAdmin() || currentUser?.role === 'admin'
 
-  const hrmsPendingCounts = useMemo(() => {
-    try {
-      const staffList = staffStorageService.getStaff()
-      const staffMap = {}
-      staffList.forEach((s) => {
-        staffMap[s.id] = s
-      })
-
-      let advances = staffStorageService.getAdvances()
-      let ot = staffStorageService.getOvertime()
-
-      if (!isUserAdmin) {
-        advances = advances.filter(
-          (a) => a.employee_id === currentUser?.id || staffMap[a.employee_id]?.username === currentUser?.username
-        )
-        ot = ot.filter(
-          (o) => o.employee_id === currentUser?.id || staffMap[o.employee_id]?.username === currentUser?.username
-        )
-      }
-
-      const pendingAdv = advances.filter((a) => a.status === 'Pending').length
-      const pendingOt = ot.filter((o) => o.status === 'Pending').length
-      return {
-        approval: pendingAdv,
-        overtime: pendingOt
-      }
-    } catch {
-      return {}
-    }
-  }, [location.pathname, isUserAdmin, currentUser])
+  const hrmsPendingCounts = useHrmsPendingCounts({
+    enabled: canAccessSystem('hrms'),
+    employeeId: isUserAdmin ? null : currentUser?.id,
+    refreshKey: location.pathname
+  })
 
   const handleLogout = () => {
     logout()

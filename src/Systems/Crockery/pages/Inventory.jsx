@@ -1020,8 +1020,10 @@ const Inventory = () => {
     const rentingRate = Number(returnForm.rentingRate || 0);
 
     if (isConsumable) {
-      const remaining = Math.max(0, Number(returnForm.remainingQty || 0));
-      const consumed = Math.max(0, issueQty - remaining);
+      // Round to 3 decimals (grams for kg items) to avoid float noise like 0.30000000000000004
+      const round3 = (n) => Math.round(n * 1000) / 1000;
+      const remaining = round3(Math.max(0, Number(returnForm.remainingQty || 0)));
+      const consumed = round3(Math.max(0, issueQty - remaining));
       const totalCost = returnForm.forType === 'H3' ? 0 : (consumed * rentingRate);
 
       setReturnForm(prev => {
@@ -2129,7 +2131,7 @@ const Inventory = () => {
                                   {col.key === 'qty' ? (
                                     isSelected ? (
                                       <div className="flex items-center justify-center gap-1">
-                                        <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                        <input type="number" step="any" min="0" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
                                         {currentData.unit && <span className="text-[10px] font-bold text-slate-400 uppercase">{currentData.unit}</span>}
                                       </div>
                                     ) : (
@@ -2208,7 +2210,7 @@ const Inventory = () => {
                                 <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
                                   {isSelected && col.key === 'qty' ? (
                                     <div className="flex items-center justify-center gap-1">
-                                      <input type="number" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
+                                      <input type="number" step="any" min="0" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
                                       {currentData.unit && <span className="text-[10px] font-bold text-slate-400 uppercase">{currentData.unit}</span>}
                                     </div>
                                   ) : isSelected && activeTab === 'return' && col.key === 'damage' ? (
@@ -2641,6 +2643,8 @@ const Inventory = () => {
                           value={issueForm.issueData}
                           onChange={(e) => setIssueForm(p => ({ ...p, issueData: e.target.value }))}
                           required
+                          min="0"
+                          step="any"
                           placeholder="0"
                           className={`w-full h-11 px-4 rounded-lg border-2 outline-none text-sm font-bold transition-all ${validationState.isOver ? 'border-red-500 bg-red-50 text-red-700' : 'border-violet-100 focus:border-violet-500 text-violet-700 bg-violet-50/20'}`}
                         />
@@ -2749,6 +2753,7 @@ const Inventory = () => {
                               onChange={(e) => setReturnForm(p => ({ ...p, remainingQty: e.target.value }))}
                               required
                               min="0"
+                              step="any"
                               max={returnForm.issueQty || '0'}
                               placeholder="0"
                               className={`w-full h-11 px-4 rounded-lg border-2 text-sm font-bold transition-all ${

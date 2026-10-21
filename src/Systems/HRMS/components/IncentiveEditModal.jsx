@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { X, Sparkles, Check } from 'lucide-react'
-import { staffStorageService } from '../services/hrmsStorageService'
 import { formatINR } from '../services/hrmsCalculations'
 
 export function IncentiveEditModal({ isOpen, onClose, employee, currentAmount = 0, onSave }) {
   const [amount, setAmount] = useState(currentAmount)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -12,12 +12,18 @@ export function IncentiveEditModal({ isOpen, onClose, employee, currentAmount = 
     }
   }, [isOpen, currentAmount])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!employee) return
-    staffStorageService.setEmployeeIncentive(employee.id, amount)
-    if (onSave) onSave()
-    onClose()
+    if (!employee || saving) return
+    setSaving(true)
+    try {
+      await onSave(Math.max(0, Number(amount) || 0))
+      onClose()
+    } catch (err) {
+      alert(`Failed to save incentive: ${err.message}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!isOpen || !employee) return null
@@ -77,10 +83,11 @@ export function IncentiveEditModal({ isOpen, onClose, employee, currentAmount = 
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-1.5"
+              disabled={saving}
+              className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-1.5 disabled:opacity-60"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>Save Incentive</span>
+              <span>{saving ? 'Saving...' : 'Save Incentive'}</span>
             </button>
           </div>
         </form>

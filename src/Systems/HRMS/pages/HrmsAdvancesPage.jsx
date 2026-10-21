@@ -11,7 +11,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { AdvanceRequestModal } from '../components/AdvanceRequestModal'
-import { staffStorageService } from '../services/hrmsStorageService'
+import { hrmsService } from '../services/hrmsService'
 import { formatINR } from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
 
@@ -26,15 +26,22 @@ export function HrmsAdvancesPage() {
   const [modalOpen, setModalOpen] = useState(false)
 
   const refreshData = async () => {
-    setAdvances(staffStorageService.getAdvances())
-    setStaff(staffStorageService.getStaff())
-    const synced = await staffStorageService.syncFromSupabase()
-    if (synced && synced.length > 0) setStaff(synced)
+    try {
+      const [adv, staffList] = await Promise.all([
+        hrmsService.getAdvances({ employeeId: isUserAdmin ? undefined : currentUser?.id }),
+        hrmsService.getStaff()
+      ])
+      setAdvances(adv)
+      setStaff(staffList)
+    } catch (e) {
+      console.error('Load advances error:', e)
+      alert(`Failed to load advances: ${e.message}`)
+    }
   }
 
   useEffect(() => {
     refreshData()
-  }, [])
+  }, [isUserAdmin, currentUser?.id])
 
   const staffMap = useMemo(() => {
     const map = {}
@@ -68,9 +75,10 @@ export function HrmsAdvancesPage() {
   }, [userAdvances, staffMap, search, statusFilter])
 
   // KPIs
-  const totalAdvanced = userAdvances.reduce((acc, a) => acc + (a.status !== 'Rejected' ? Number(a.amount) || 0 : 0), 0)
-  const totalRecovered = userAdvances.reduce((acc, a) => acc + (Number(a.total_recovered) || 0), 0)
-  const remainingBalance = Math.max(0, totalAdvanced - totalRecovered)
+  const disbursed = userAdvances.filter((a) => a.status === 'Approved' || a.status === 'Closed')
+  const totalAdvanced = disbursed.reduce((acc, a) => acc + (Number(a.amount) || 0), 0)
+  const totalRecovered = disbursed.reduce((acc, a) => acc + (Number(a.total_recovered) || 0), 0)
+  const remainingBalance = disbursed.reduce((acc, a) => acc + (Number(a.remaining_balance) || 0), 0)
   const recoveryPercent = totalAdvanced > 0 ? ((totalRecovered / totalAdvanced) * 100).toFixed(1) : 0
 
   const getInitials = (name) => {
@@ -288,6 +296,7 @@ export function HrmsAdvancesPage() {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSave={refreshData}
+        staff={isUserAdmin ? staff : staff.filter((s) => s.id === currentUser?.id)}
       />
     </div>
   )

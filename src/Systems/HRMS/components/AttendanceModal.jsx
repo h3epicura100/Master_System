@@ -10,16 +10,18 @@ import {
   Check,
   ExternalLink,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react'
-import { staffStorageService } from '../services/hrmsStorageService'
+import { hrmsService } from '../services/hrmsService'
+import { toLocalDateStr, toLocalTimeStr, formatTime12h, OFFICE_HOURS_LABEL } from '../services/hrmsCalculations'
+import { nominatimService } from '../services/nominatimService'
 import { useAuth } from '../../../context/AuthContext'
 
-export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId = null, preselectedType = 'in' }) {
+export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselectedEmployeeId = null, preselectedType = 'in' }) {
   const { currentUser, isAdmin, getModuleRole } = useAuth()
   const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
 
-  const staff = staffStorageService.getStaff()
   const activeStaff = isUserAdmin
     ? staff
     : staff.filter((s) => s.id === currentUser?.id || s.username === currentUser?.username)
@@ -27,11 +29,14 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
   const defaultEmpId = preselectedEmployeeId || activeStaff[0]?.id || currentUser?.id || ''
   const [employeeId, setEmployeeId] = useState(defaultEmpId)
   const [punchType, setPunchType] = useState(preselectedType || 'in')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [time, setTime] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-  const [outTime, setOutTime] = useState('')
-  const [location, setLocation] = useState('NH30, Raipur, Chhattisgarh, (492001)')
-  const [coordinates, setCoordinates] = useState('21.2647°N, 81.6367°E')
+  const [date, setDate] = useState(toLocalDateStr())
+  const [time, setTime] = useState(toLocalTimeStr())
+  const [location, setLocation] = useState('')
+  const [coordinates, setCoordinates] = useState('')
+  const [rawCoords, setRawCoords] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
+  const [isLocating, setIsLocating] = useState(false)
   const [capturedPhoto, setCapturedPhoto] = useState(null)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraError, setCameraError] = useState(null)
@@ -45,10 +50,10 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
       if (preselectedEmployeeId) setEmployeeId(preselectedEmployeeId)
       else if (activeStaff.length > 0 && !employeeId) setEmployeeId(activeStaff[0].id)
       setPunchType(preselectedType || 'in')
-      const now = new Date()
-      setDate(now.toISOString().split('T')[0])
-      setTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      setDate(toLocalDateStr())
+      setTime(toLocalTimeStr())
       setCapturedPhoto(null)
+      setErrorMsg('')
       startCamera()
       fetchLocation()
     } else {
@@ -89,41 +94,59 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
     setCameraActive(false)
   }
 
-  // Location / GPS fetch
+  // Location / GPS fetch with Nominatim Reverse Geocoding
   const fetchLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = pos.coords.latitude.toFixed(4)
-          const lon = pos.coords.longitude.toFixed(4)
-          setCoordinates(`${lat}°N, ${lon}°E`)
-          setLocation(`Raipur Operations Hub, Chhattisgarh (${lat}°, ${lon}°)`)
-        },
-        () => {
-          // Fallback to Raipur coordinates from screenshots
-          setCoordinates('21.2647°N, 81.6367°E')
-          setLocation('NH30, Raipur, Chhattisgarh, (492001)')
-        }
-      )
+    if (!navigator.geolocation) {
+      setCoordinates('')
+      setRawCoords(null)
+      return
     }
+
+    setIsLocating(true)
+    setLocation('Detecting precise GPS address...')
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude
+        const lon = pos.coords.longitude
+        setRawCoords({ lat, lon })
+        setCoordinates(`${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`)
+
+        try {
+          const res = await nominatimService.getPreciseLocation(lat, lon)
+          if (res.success && res.formattedAddress) {
+            setLocation(res.formattedAddress)
+          } else {
+            setLocation(`Location (${lat.toFixed(4)}°, ${lon.toFixed(4)}°)`)
+          }
+        } catch {
+          setLocation(`Location (${lat.toFixed(4)}°, ${lon.toFixed(4)}°)`)
+        } finally {
+          setIsLocating(false)
+        }
+      },
+      (err) => {
+        console.warn('Geolocation failed or permission denied:', err)
+        setCoordinates('')
+        setLocation('')
+        setRawCoords(null)
+        setIsLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    )
   }
 
-  // Capture face photo
+  // Capture face photo with stamped corner overlay directly on canvas
   const handleCapture = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 640
+    canvas.height = 480
+    const ctx = canvas.getContext('2d')
+
     if (videoRef.current && cameraActive) {
-      const canvas = document.createElement('canvas')
-      canvas.width = videoRef.current.videoWidth || 640
-      canvas.height = videoRef.current.videoHeight || 480
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
-      setCapturedPhoto(canvas.toDataURL('image/jpeg'))
+      ctx.drawImage(videoRef.current, 0, 0, 640, 480)
     } else {
       // Create simulated stamped capture photo
-      const canvas = document.createElement('canvas')
-      canvas.width = 640
-      canvas.height = 480
-      const ctx = canvas.getContext('2d')
-      // Background gradient
       const grad = ctx.createLinearGradient(0, 0, 640, 480)
       grad.addColorStop(0, '#1e293b')
       grad.addColorStop(1, '#0f172a')
@@ -138,29 +161,73 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
       ctx.beginPath()
       ctx.arc(320, 360, 120, 0, Math.PI, true)
       ctx.fill()
-
-      setCapturedPhoto(canvas.toDataURL('image/jpeg'))
     }
+
+    // --- Burn-in Watermark Stamp onto the Captured Canvas ---
+    const cardWidth = 330
+    const cardHeight = 82
+    const cardX = 640 - cardWidth - 14
+    const cardY = 480 - cardHeight - 14
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'
+    ctx.lineWidth = 1
+
+    if (ctx.roundRect) {
+      ctx.beginPath()
+      ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 10)
+      ctx.fill()
+      ctx.stroke()
+    } else {
+      ctx.fillRect(cardX, cardY, cardWidth, cardHeight)
+    }
+
+    // Line 1: Punch Type Badge & Staff Name
+    const empName = selectedEmp ? selectedEmp.name : 'STAFF'
+    ctx.fillStyle = punchType === 'in' ? '#34d399' : '#fbbf24'
+    ctx.font = 'bold 12px Inter, system-ui, sans-serif'
+    ctx.fillText(`${punchType.toUpperCase()} • ${empName}`, cardX + 12, cardY + 22)
+
+    // Line 2: Precise Address (truncated if too long)
+    ctx.fillStyle = '#e2e8f0'
+    ctx.font = '11px Inter, system-ui, sans-serif'
+    const displayLoc = location.length > 44 ? location.substring(0, 42) + '...' : location
+    ctx.fillText(displayLoc, cardX + 12, cardY + 44)
+
+    // Line 3: Coordinates & Date/Time
+    ctx.fillStyle = '#94a3b8'
+    ctx.font = '10px monospace'
+    ctx.fillText(`${coordinates || 'GPS unavailable'}  |  ${date} ${formatTime12h(time)}`, cardX + 12, cardY + 68)
+
+    setCapturedPhoto(canvas.toDataURL('image/jpeg', 0.88))
   }
 
   const selectedEmp = staff.find((s) => s.id === employeeId)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!employeeId) return
-
-    staffStorageService.recordPunch({
-      employee_id: employeeId,
-      type: punchType,
-      date,
-      time: time || '10:00 am',
-      location,
-      coordinates,
-      photo_url: capturedPhoto || ''
-    })
-
-    if (onSave) onSave()
-    onClose()
+    if (!employeeId || saving) return
+    setErrorMsg('')
+    setSaving(true)
+    try {
+      await hrmsService.recordPunch({
+        employee_id: employeeId,
+        type: punchType,
+        date,
+        time,
+        location: location.trim(),
+        coordinates,
+        photo: capturedPhoto || '',
+        marked_by: currentUser?.id || null
+      })
+      if (onSave) onSave()
+      onClose()
+    } catch (err) {
+      console.error('Save punch error:', err)
+      setErrorMsg(err.message || 'Failed to save attendance punch.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!isOpen) return null
@@ -272,15 +339,17 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                 Punch Time <span className="text-rose-500">*</span>
+                <span className="ml-1 normal-case tracking-normal font-semibold text-slate-400">
+                  (Office {OFFICE_HOURS_LABEL})
+                </span>
               </label>
               <div className="relative">
                 <Clock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
-                  type="text"
+                  type="time"
                   required
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  placeholder="e.g. 10:00 am"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
                 />
               </div>
@@ -288,15 +357,22 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
 
             {/* Premise / Location */}
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Location / Premise
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                <span>Location / Premise</span>
+                {isLocating && (
+                  <span className="text-[11px] font-semibold text-amber-600 flex items-center gap-1 normal-case">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Detecting precise address...
+                  </span>
+                )}
               </label>
               <div className="relative">
-                <MapPin className="w-4 h-4 text-rose-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <MapPin className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${isLocating ? 'text-amber-500 animate-pulse' : 'text-rose-500'}`} />
                 <input
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
+                  placeholder={isLocating ? 'Detecting precise GPS address via Nominatim...' : 'e.g. VIP Road, Raipur'}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
                 />
               </div>
@@ -354,8 +430,8 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
                   <span className="truncate">{location}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400 text-[9px] sm:text-[10px] pt-0.5 border-t border-white/10 font-mono">
-                  <span>{coordinates}</span>
-                  <span>{time}</span>
+                  <span>{coordinates || 'GPS unavailable'}</span>
+                  <span>{formatTime12h(time)}</span>
                 </div>
               </div>
             </div>
@@ -375,23 +451,33 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
                 <button
                   type="button"
                   onClick={fetchLocation}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1"
+                  disabled={isLocating}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <RefreshCw className="w-3 h-3 text-slate-400" />
-                  <span>Refresh GPS</span>
+                  <RefreshCw className={`w-3 h-3 text-slate-400 ${isLocating ? 'animate-spin text-violet-600' : ''}`} />
+                  <span>{isLocating ? 'Locating...' : 'Refresh GPS'}</span>
                 </button>
-                <a
-                  href={`https://www.google.com/maps?q=21.2647,81.6367`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs font-bold text-violet-600 hover:underline flex items-center gap-0.5"
-                >
-                  <span>Open Maps</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                {rawCoords && (
+                  <a
+                    href={`https://www.google.com/maps?q=${rawCoords.lat},${rawCoords.lon}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-bold text-violet-600 hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Open Maps</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
             </div>
           </div>
+
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
           {/* Modal Footer */}
           <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 sticky bottom-0 bg-white">
@@ -405,10 +491,11 @@ export function AttendanceModal({ isOpen, onClose, onSave, preselectedEmployeeId
 
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2"
+              disabled={saving || isLocating}
+              className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <Check className="w-4 h-4" />
-              <span>Confirm & Save Punch</span>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              <span>{saving ? 'Saving...' : 'Confirm & Save Punch'}</span>
             </button>
           </div>
         </form>

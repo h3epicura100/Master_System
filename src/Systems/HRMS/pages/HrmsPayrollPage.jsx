@@ -11,103 +11,115 @@ import {
   Printer
 } from 'lucide-react'
 import { PayslipModal } from '../components/PayslipModal'
-import { staffStorageService } from '../services/hrmsStorageService'
-import { formatINR, calculateEmployeePayroll } from '../services/hrmsCalculations'
+import { IncentiveEditModal } from '../components/IncentiveEditModal'
+import { hrmsService } from '../services/hrmsService'
+import {
+  formatINR,
+  calculateEmployeePayroll,
+  payrollCalcToRecord,
+  payrollRecordToCalc,
+  getMonthRange,
+  getDaysCounted,
+  toLocalDateStr
+} from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
+
+const PRESENT_STATUSES = ['Checked IN', 'Checked OUT']
 
 export function HrmsPayrollPage() {
   const { currentUser, isAdmin, getModuleRole } = useAuth()
   const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
 
+  const [month, setMonth] = useState(toLocalDateStr().slice(0, 7)) // 'YYYY-MM'
+  const range = useMemo(() => getMonthRange(month), [month])
+
   const [staff, setStaff] = useState([])
+  const [attendance, setAttendance] = useState([])
   const [advances, setAdvances] = useState([])
   const [overtime, setOvertime] = useState([])
-  const [payrollAdjustments, setPayrollAdjustments] = useState({})
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busyEmpId, setBusyEmpId] = useState(null)
   const [subTab, setSubTab] = useState('current') // 'current' | 'paid'
 
   // Modals state
   const [selectedSlipItem, setSelectedSlipItem] = useState(null)
+  const [incentiveItem, setIncentiveItem] = useState(null)
 
   const refreshData = async () => {
-    setStaff(staffStorageService.getStaff())
-    setAdvances(staffStorageService.getAdvances())
-    setOvertime(staffStorageService.getOvertime())
-    setPayrollAdjustments(staffStorageService.getPayrollAdjustments())
-    const synced = await staffStorageService.syncFromSupabase()
-    if (synced && synced.length > 0) {
-      setStaff(synced)
+    const employeeId = isUserAdmin ? undefined : currentUser?.id
+    try {
+      const [staffList, att, ot, adv, recs] = await Promise.all([
+        hrmsService.getStaff(),
+        hrmsService.getAttendance({ from: range.from, to: range.to, employeeId }),
+        hrmsService.getOvertime({ from: range.from, to: range.to, employeeId }),
+        hrmsService.getAdvances({ employeeId, status: 'Approved' }),
+        hrmsService.getPayrollRecords(range.periodMonth, { employeeId })
+      ])
+      setStaff(staffList)
+      setAttendance(att)
+      setOvertime(ot)
+      setAdvances(adv)
+      setRecords(recs)
+    } catch (e) {
+      console.error('Load payroll error:', e)
+      alert(`Failed to load payroll: ${e.message}`)
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
     refreshData()
-  }, [])
+  }, [range, isUserAdmin, currentUser?.id])
 
   // Staff Data Isolation: staff only sees their own payroll
   const visibleStaff = useMemo(() => {
     if (isUserAdmin) return staff
-    const userMatches = staff.filter(
-      (s) => s.id === currentUser?.id || s.username === currentUser?.username
-    )
-    if (userMatches.length > 0) return userMatches
-    if (currentUser) {
-      return [{
-        id: currentUser.id,
-        name: currentUser.full_name || currentUser.username,
-        username: currentUser.username,
-        department: currentUser.department || 'WORKER',
-        designation: currentUser.designation || 'Staff Worker',
-        base_salary: currentUser.base_salary || 0,
-        status: 'active'
-      }]
-    }
-    return []
+    return staff.filter((s) => s.id === currentUser?.id)
   }, [staff, isUserAdmin, currentUser])
 
   // Calculate full payroll item for each employee
   const payrollList = useMemo(() => {
+    const recordMap = Object.fromEntries(records.map((r) => [r.employee_id, r]))
+
     return visibleStaff.map((emp) => {
-      const adj = payrollAdjustments[emp.id] || {
-        present_days: 30,
-        half_days: 0,
-        used_leaves: 0,
-        incentives: 0,
-        status: 'Hold'
-      }
+      const record = recordMap[emp.id] || null
+      const status = record?.status || 'Hold'
 
-      // Find active approved advance EMI
-      const activeAdvance = advances.find((a) => a.employee_id === emp.id && a.status === 'Approved')
-      const advanceEmi = activeAdvance ? Number(activeAdvance.monthly_emi) || 0 : 0
+      const empAtt = attendance.filter((a) => a.employee_id === emp.id)
+      const presentDays = empAtt.filter((a) => PRESENT_STATUSES.includes(a.status)).length
+      const halfDays = empAtt.filter((a) => a.status === 'Half Day').length
 
-      // Find approved OT hours
-      const approvedOt = overtime.filter((o) => o.employee_id === emp.id && o.status === 'Approved')
-      const approvedOtHours = approvedOt.reduce((acc, o) => acc + (Number(o.hours) || 0), 0)
+      const empOt = overtime.filter((o) => o.employee_id === emp.id)
+      const sumHours = (list) => list.reduce((acc, o) => acc + (Number(o.hours) || 0), 0)
+      const approvedOtHours = sumHours(empOt.filter((o) => o.status === 'Approved'))
+      const pendingOtHours = sumHours(empOt.filter((o) => o.status === 'Pending'))
 
-      // Find pending OT hours for display
-      const pendingOt = overtime.filter((o) => o.employee_id === emp.id && o.status === 'Pending')
-      const pendingOtHours = pendingOt.reduce((acc, o) => acc + (Number(o.hours) || 0), 0)
+      // Active advance requested on/before this month: deduct EMI, capped at what's left
+      const activeAdvance = advances.find((a) => a.employee_id === emp.id && a.request_date <= range.to) || null
+      const advanceEmi = activeAdvance
+        ? Math.min(Number(activeAdvance.monthly_emi) || 0, Number(activeAdvance.remaining_balance) || 0)
+        : 0
 
-      const calc = calculateEmployeePayroll({
+      const inputs = {
         employee: emp,
-        presentDays: adj.present_days !== undefined ? adj.present_days : 30,
-        halfDays: adj.half_days || 0,
-        usedLeaves: adj.used_leaves || 0,
+        daysInMonth: range.daysInMonth,
+        daysCounted: getDaysCounted(month, emp.join_date),
+        presentDays,
+        halfDays,
         approvedOtHours,
-        incentives: 0,
-        advanceEmi,
-        daysInMonth: 31
-      })
-
-      return {
-        emp,
-        adj,
-        advanceEmi,
-        pendingOtHours,
-        calc,
-        status: adj.status || 'Hold'
+        advanceEmi
       }
+
+      // Paid months are frozen to the stored snapshot; everything else is live
+      const calc = status === 'Paid'
+        ? payrollRecordToCalc(record)
+        : calculateEmployeePayroll({ ...inputs, incentives: Number(record?.incentives) || 0 })
+
+      return { emp, record, activeAdvance, inputs, pendingOtHours, calc, status }
     })
-  }, [staff, advances, overtime, payrollAdjustments])
+  }, [visibleStaff, attendance, overtime, advances, records, range, month])
 
   // Filter based on subTab
   const displayedList = useMemo(() => {
@@ -124,9 +136,38 @@ export function HrmsPayrollPage() {
   const paidCount = payrollList.filter((item) => item.status === 'Paid').length
   const paidPercent = totalEmployees > 0 ? Math.round((paidCount / totalEmployees) * 100) : 0
 
-  const handleStatusChange = (empId, nextStatus) => {
-    staffStorageService.setEmployeePayrollStatus(empId, nextStatus)
-    refreshData()
+  // Persist a full snapshot of the employee's payroll for this month
+  const persist = async (item, { status = item.status, calc = item.calc } = {}) => {
+    setBusyEmpId(item.emp.id)
+    try {
+      await hrmsService.savePayrollRecord({
+        employee_id: item.emp.id,
+        period_month: range.periodMonth,
+        ...payrollCalcToRecord(calc),
+        // A paid snapshot keeps the advance it recovered against
+        advance_id: item.status === 'Paid' ? item.record?.advance_id || null : item.activeAdvance?.id || null,
+        status
+      })
+      await refreshData()
+    } catch (e) {
+      alert(`Failed to save payroll: ${e.message}`)
+    } finally {
+      setBusyEmpId(null)
+    }
+  }
+
+  const handleStatusChange = (item, nextStatus) => {
+    if (nextStatus === item.status) return
+    if (nextStatus === 'Paid' && !window.confirm(
+      `Mark ${item.emp.name}'s ${range.label} salary of ${formatINR(item.calc.netPay)} as paid?` +
+      (item.calc.advanceEmi > 0 ? `\n${formatINR(item.calc.advanceEmi)} will be recovered against the salary advance.` : '')
+    )) return
+    persist(item, { status: nextStatus })
+  }
+
+  const handleIncentiveSave = (amount) => {
+    const item = incentiveItem
+    return persist(item, { calc: calculateEmployeePayroll({ ...item.inputs, incentives: amount }) })
   }
 
   const getInitials = (name) => {
@@ -147,7 +188,7 @@ export function HrmsPayrollPage() {
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          Current Month (October 2026)
+          {range.label}
         </button>
         <button
           onClick={() => setSubTab('paid')}
@@ -159,6 +200,13 @@ export function HrmsPayrollPage() {
         >
           Paid Disbursed ({paidCount})
         </button>
+        <input
+          type="month"
+          value={month}
+          max={toLocalDateStr().slice(0, 7)}
+          onChange={(e) => e.target.value && setMonth(e.target.value)}
+          className="ml-auto px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+        />
       </div>
 
       {/* 3 Master KPI Stat Cards */}
@@ -166,7 +214,7 @@ export function HrmsPayrollPage() {
         <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Payroll Period</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">Oct 2026</span>
+            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">{range.shortLabel}</span>
             <span className="text-xs text-slate-500 font-medium mt-0.5 block">{totalEmployees} Active staff</span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -178,7 +226,7 @@ export function HrmsPayrollPage() {
           <div>
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Gross Pay</span>
             <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">{formatINR(totalGrossPay)}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Before OT & deductions</span>
+            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Incl. OT & incentives</span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
             <Banknote className="w-6 h-6" />
@@ -225,15 +273,28 @@ export function HrmsPayrollPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {displayedList.map(({ emp, adj, advanceEmi, pendingOtHours, calc, status }) => {
+              {displayedList.length === 0 && (
+                <tr>
+                  <td colSpan={isUserAdmin ? 11 : 10} className="py-12 text-center text-slate-400">
+                    <Banknote className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="font-semibold text-slate-600">
+                      {loading ? 'Loading payroll...' : subTab === 'paid' ? 'No salaries paid for this month yet' : 'No active staff — add staff in Global Settings'}
+                    </p>
+                  </td>
+                </tr>
+              )}
+              {displayedList.map((item) => {
+                const { emp, pendingOtHours, calc, status } = item
+                const isBusy = busyEmpId === emp.id
                 return (
                   <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
                     {/* Action Submit (Admin only) */}
                     {isUserAdmin && (
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <button
-                          onClick={() => handleStatusChange(emp.id, status === 'Paid' ? 'Hold' : 'Paid')}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-xs ${
+                          disabled={isBusy}
+                          onClick={() => handleStatusChange(item, status === 'Paid' ? 'Hold' : 'Paid')}
+                          className={`disabled:opacity-50 px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-xs ${
                             status === 'Paid'
                               ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                               : 'bg-emerald-600 hover:bg-emerald-700 text-white'
@@ -268,7 +329,7 @@ export function HrmsPayrollPage() {
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <div>
                         <span className="font-extrabold text-slate-900 text-xs">
-                          {calc.effectivePresentDays} / {calc.daysInMonth}d
+                          {calc.effectivePresentDays} / {calc.daysCounted}d
                         </span>
                         {pendingOtHours > 0 && (
                           <span className="text-[10px] text-amber-600 block font-bold">
@@ -295,8 +356,18 @@ export function HrmsPayrollPage() {
                     </td>
 
                     {/* Gross */}
-                    <td className="py-3.5 px-4 whitespace-nowrap font-bold text-slate-900">
-                      {formatINR(calc.grossPay - calc.otPay)}
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <span className="font-bold text-slate-900 block">{formatINR(calc.grossPay - calc.otPay)}</span>
+                      {(calc.incentives > 0 || (isUserAdmin && status !== 'Paid')) && (
+                        <button
+                          type="button"
+                          disabled={!isUserAdmin || status === 'Paid' || isBusy}
+                          onClick={() => setIncentiveItem(item)}
+                          className="text-[10px] font-bold text-violet-600 enabled:hover:underline disabled:cursor-default"
+                        >
+                          {calc.incentives > 0 ? `incl. ${formatINR(calc.incentives)} incentive` : '+ Incentive'}
+                        </button>
+                      )}
                     </td>
 
                     {/* OT Pay */}
@@ -327,7 +398,8 @@ export function HrmsPayrollPage() {
                       {isUserAdmin ? (
                         <select
                           value={status}
-                          onChange={(e) => handleStatusChange(emp.id, e.target.value)}
+                          disabled={isBusy}
+                          onChange={(e) => handleStatusChange(item, e.target.value)}
                           className={`py-1 px-2.5 rounded-lg text-xs font-bold border transition-colors ${
                             status === 'Paid'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -378,6 +450,17 @@ export function HrmsPayrollPage() {
         isOpen={Boolean(selectedSlipItem)}
         onClose={() => setSelectedSlipItem(null)}
         payrollItem={selectedSlipItem}
+        month={range.label}
+        slipSuffix={month.replace('-', '')}
+      />
+
+      {/* Incentive Modal */}
+      <IncentiveEditModal
+        isOpen={Boolean(incentiveItem)}
+        onClose={() => setIncentiveItem(null)}
+        employee={incentiveItem?.emp}
+        currentAmount={incentiveItem?.calc.incentives || 0}
+        onSave={handleIncentiveSave}
       />
     </div>
   )

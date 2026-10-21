@@ -16,7 +16,16 @@ import {
   Plus
 } from 'lucide-react'
 import { AttendanceModal } from '../components/AttendanceModal'
-import { staffStorageService } from '../services/hrmsStorageService'
+import { hrmsService } from '../services/hrmsService'
+import {
+  toLocalDateStr,
+  formatTime12h,
+  formatDuration,
+  formatMinutes,
+  getLateMinutes,
+  getEarlyExitMinutes,
+  OFFICE_HOURS_LABEL
+} from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
 
 export function HrmsAttendancePage() {
@@ -28,23 +37,33 @@ export function HrmsAttendancePage() {
   const [search, setSearch] = useState('')
   const [selectedDept, setSelectedDept] = useState('All Departments')
   const [selectedStatus, setSelectedStatus] = useState('All Status')
-  const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0])
+  const [dateFilter, setDateFilter] = useState(toLocalDateStr())
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalEmpId, setModalEmpId] = useState(null)
   const [modalType, setModalType] = useState('in')
 
+  const [loading, setLoading] = useState(true)
+  const [busyEmpId, setBusyEmpId] = useState(null)
+
   const refreshData = async () => {
-    setStaff(staffStorageService.getStaff())
-    setAttendance(staffStorageService.getAttendance())
-    const synced = await staffStorageService.syncFromSupabase()
-    if (synced && synced.length > 0) {
-      setStaff(synced)
+    try {
+      const [staffList, att] = await Promise.all([
+        hrmsService.getStaff(),
+        hrmsService.getAttendance({ date: dateFilter, employeeId: isUserAdmin ? undefined : currentUser?.id })
+      ])
+      setStaff(staffList)
+      setAttendance(att)
+    } catch (e) {
+      console.error('Load attendance error:', e)
+      alert(`Failed to load attendance: ${e.message}`)
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
     refreshData()
-  }, [])
+  }, [dateFilter, isUserAdmin, currentUser?.id])
 
   // Staff Data Isolation: staff only sees their own employee profile
   const visibleStaff = useMemo(() => {
@@ -76,19 +95,17 @@ export function HrmsAttendancePage() {
   // Filtered attendance records joined with staff profile
   const records = useMemo(() => {
     return visibleStaff.map((emp) => {
-      const att = attendance.find((a) => a.employee_id === emp.id && (!dateFilter || a.date === dateFilter))
+      const att = attendance.find((a) => a.employee_id === emp.id && a.date === dateFilter)
       return {
         emp,
         att: att || {
-          id: `virtual-${emp.id}`,
+          id: null,
           employee_id: emp.id,
           date: dateFilter,
-          in_time: '',
-          out_time: '',
-          duration: '—',
+          in_time: null,
+          out_time: null,
           status: 'Absent',
-          paid_leave_status: 'Unpaid Absent',
-          location: '—',
+          location: '',
           coordinates: ''
         }
       }
@@ -110,19 +127,25 @@ export function HrmsAttendancePage() {
 
   // KPI Calculations
   const totalStaffCount = visibleStaff.length
-  const presentCount = records.filter(({ att }) => att.status === 'Checked IN' || att.status === 'Checked OUT').length
+  const presentCount = records.filter(({ att }) => ['Checked IN', 'Checked OUT', 'Half Day'].includes(att.status)).length
+  const isToday = dateFilter === toLocalDateStr()
   const absentCount = Math.max(0, totalStaffCount - presentCount)
 
   // Quick Action Handlers
-  const handleQuickIn = (empId) => {
-    staffStorageService.quickCheckIn(empId)
-    refreshData()
+  const runPunch = async (empId, action) => {
+    setBusyEmpId(empId)
+    try {
+      await action(empId, currentUser?.id)
+      await refreshData()
+    } catch (e) {
+      alert(`Failed to record punch: ${e.message}`)
+    } finally {
+      setBusyEmpId(null)
+    }
   }
 
-  const handleQuickOut = (empId) => {
-    staffStorageService.quickCheckOut(empId)
-    refreshData()
-  }
+  const handleQuickIn = (empId) => runPunch(empId, (id, by) => hrmsService.quickCheckIn(id, by))
+  const handleQuickOut = (empId) => runPunch(empId, (id, by) => hrmsService.quickCheckOut(id, by))
 
   const handleOpenPunchModal = (empId, type) => {
     setModalEmpId(empId)
@@ -130,10 +153,13 @@ export function HrmsAttendancePage() {
     setIsModalOpen(true)
   }
 
-  const handleDelete = (attId) => {
-    if (window.confirm('Delete this attendance record?')) {
-      staffStorageService.deleteAttendance(attId)
-      refreshData()
+  const handleDelete = async (attId) => {
+    if (!window.confirm('Delete this attendance record?')) return
+    try {
+      await hrmsService.deleteAttendance(attId)
+      await refreshData()
+    } catch (e) {
+      alert(`Failed to delete record: ${e.message}`)
     }
   }
 
@@ -228,12 +254,18 @@ export function HrmsAttendancePage() {
               className="px-2.5 py-1.5 rounded-xl border border-slate-200 font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500/20 text-xs"
             />
             <button
-              onClick={() => setDateFilter(new Date().toISOString().split('T')[0])}
+              onClick={() => setDateFilter(toLocalDateStr())}
               className="px-2.5 py-1.5 rounded-xl bg-violet-50 text-violet-700 font-bold hover:bg-violet-100 transition-colors"
             >
               Today
             </button>
           </div>
+
+          {/* Office Hours */}
+          <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-600">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            Office: {OFFICE_HOURS_LABEL}
+          </span>
 
           {/* Department Filter */}
           <select
@@ -257,6 +289,7 @@ export function HrmsAttendancePage() {
             <option value="All Status">All Status</option>
             <option value="Checked IN">Checked IN</option>
             <option value="Checked OUT">Checked OUT</option>
+            <option value="Half Day">Half Day</option>
             <option value="Absent">Absent</option>
           </select>
         </div>
@@ -294,7 +327,9 @@ export function HrmsAttendancePage() {
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <p className="font-semibold text-slate-600">No attendance records found</p>
+                    <p className="font-semibold text-slate-600">
+                      {loading ? 'Loading attendance...' : staff.length === 0 ? 'No active staff — add staff in Global Settings' : 'No attendance records found'}
+                    </p>
                   </td>
                 </tr>
               ) : (
@@ -302,26 +337,30 @@ export function HrmsAttendancePage() {
                   const isCheckedIn = att.status === 'Checked IN'
                   const isCheckedOut = att.status === 'Checked OUT'
                   const isAbsent = att.status === 'Absent'
+                  const lateMins = getLateMinutes(att.in_time)
+                  const earlyMins = getEarlyExitMinutes(att.in_time, att.out_time)
 
                   return (
                     <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
                       {/* Actions */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          {isCheckedIn && (
+                          {isCheckedIn && isToday && (
                             <button
+                              disabled={busyEmpId === emp.id}
                               onClick={() => handleQuickOut(emp.id)}
-                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1"
+                              className="disabled:opacity-50 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1"
                             >
                               <LogOut className="w-3 h-3" />
                               <span>Check OUT</span>
                             </button>
                           )}
 
-                          {isAbsent && (
+                          {isAbsent && isToday && (
                             <button
+                              disabled={busyEmpId === emp.id}
                               onClick={() => handleQuickIn(emp.id)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1"
+                              className="disabled:opacity-50 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1"
                             >
                               <LogIn className="w-3 h-3" />
                               <span>Check IN</span>
@@ -336,7 +375,7 @@ export function HrmsAttendancePage() {
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
 
-                          {isUserAdmin && att.id && !att.id.startsWith('virtual-') && (
+                          {isUserAdmin && att.id && (
                             <button
                               onClick={() => handleDelete(att.id)}
                               title="Delete punch"
@@ -379,17 +418,27 @@ export function HrmsAttendancePage() {
 
                       {/* In Time */}
                       <td className="py-3 px-4 whitespace-nowrap font-bold text-slate-800">
-                        {att.in_time || '—'}
+                        {formatTime12h(att.in_time) || '—'}
+                        {lateMins > 0 && (
+                          <span className="block text-[10px] font-bold text-amber-600">
+                            Late by {formatMinutes(lateMins)}
+                          </span>
+                        )}
                       </td>
 
                       {/* Out Time */}
                       <td className="py-3 px-4 whitespace-nowrap font-bold text-slate-800">
-                        {att.out_time || '—'}
+                        {formatTime12h(att.out_time) || '—'}
+                        {earlyMins > 0 && (
+                          <span className="block text-[10px] font-bold text-rose-600">
+                            Left {formatMinutes(earlyMins)} early
+                          </span>
+                        )}
                       </td>
 
                       {/* Duration */}
                       <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-700">
-                        {att.duration || '—'}
+                        {formatDuration(att.in_time, att.out_time, isToday)}
                       </td>
 
                       {/* Status */}
@@ -414,12 +463,14 @@ export function HrmsAttendancePage() {
 
                       {/* Paid Leave Status */}
                       <td className="py-3 px-4 whitespace-nowrap">
-                        {att.paid_leave_status?.includes('Unpaid') ? (
+                        {isAbsent || att.status === 'On Leave' ? (
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            {att.paid_leave_status}
+                            Leave Day
                           </span>
                         ) : (
-                          <span className="text-slate-400 font-medium">{att.paid_leave_status || '—'}</span>
+                          <span className="text-slate-400 font-medium">
+                            {att.status === 'Half Day' ? 'Half Leave' : '— (Present)'}
+                          </span>
                         )}
                       </td>
 
@@ -433,7 +484,7 @@ export function HrmsAttendancePage() {
                             className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 hover:text-violet-600 transition-colors"
                           >
                             <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                            <span className="truncate max-w-[140px]">{att.location || 'Raipur'}</span>
+                            <span className="truncate max-w-[140px]">{att.location || att.coordinates}</span>
                             <ExternalLink className="w-3 h-3 text-slate-400" />
                           </a>
                         ) : (
@@ -458,6 +509,7 @@ export function HrmsAttendancePage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={refreshData}
+        staff={visibleStaff}
         preselectedEmployeeId={modalEmpId}
         preselectedType={modalType}
       />

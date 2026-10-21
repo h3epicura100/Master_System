@@ -9,7 +9,7 @@ import {
   User,
   CreditCard
 } from 'lucide-react'
-import { staffStorageService } from '../services/hrmsStorageService'
+import { hrmsService } from '../services/hrmsService'
 import { formatINR } from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
 
@@ -21,15 +21,22 @@ export function HrmsApprovalPage() {
   const [staff, setStaff] = useState([])
 
   const refreshData = async () => {
-    setAdvances(staffStorageService.getAdvances())
-    setStaff(staffStorageService.getStaff())
-    const synced = await staffStorageService.syncFromSupabase()
-    if (synced && synced.length > 0) setStaff(synced)
+    try {
+      const [adv, staffList] = await Promise.all([
+        hrmsService.getAdvances({ employeeId: isUserAdmin ? undefined : currentUser?.id }),
+        hrmsService.getStaff()
+      ])
+      setAdvances(adv)
+      setStaff(staffList)
+    } catch (e) {
+      console.error('Load advances error:', e)
+      alert(`Failed to load advances: ${e.message}`)
+    }
   }
 
   useEffect(() => {
     refreshData()
-  }, [])
+  }, [isUserAdmin, currentUser?.id])
 
   const staffMap = useMemo(() => {
     const map = {}
@@ -62,24 +69,29 @@ export function HrmsApprovalPage() {
   const approvedCount = visibleAdvances.filter((a) => a.status === 'Approved').length
   const rejectedCount = visibleAdvances.filter((a) => a.status === 'Rejected').length
 
-  const handleApprove = (id) => {
-    staffStorageService.updateAdvanceStatus(id, 'Approved')
-    refreshData()
+  const review = async (id, status, monthly_emi = null) => {
+    try {
+      await hrmsService.reviewAdvance(id, status, { monthly_emi, reviewed_by: currentUser?.id || null })
+      await refreshData()
+    } catch (e) {
+      alert(`Failed to update advance: ${e.message}`)
+    }
   }
 
+  const handleApprove = (id) => review(id, 'Approved')
+
   const handleReject = (id) => {
-    if (window.confirm('Reject this salary advance request?')) {
-      staffStorageService.updateAdvanceStatus(id, 'Rejected')
-      refreshData()
-    }
+    if (window.confirm('Reject this salary advance request?')) review(id, 'Rejected')
   }
 
   const handleAdjustAndApprove = (adv) => {
     const newEmi = window.prompt(`Adjust monthly deduction EMI for ${formatINR(adv.amount)} advance:`, adv.monthly_emi)
-    if (newEmi && !isNaN(newEmi) && Number(newEmi) > 0) {
-      staffStorageService.updateAdvanceStatus(adv.id, 'Approved', Number(newEmi))
-      refreshData()
+    if (!newEmi || isNaN(newEmi) || Number(newEmi) <= 0) return
+    if (Number(newEmi) > Number(adv.amount)) {
+      alert('EMI cannot exceed the advance amount.')
+      return
     }
+    review(adv.id, 'Approved', Number(newEmi))
   }
 
   const getInitials = (name) => {
@@ -159,7 +171,7 @@ export function HrmsApprovalPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {pendingRequests.map((adv) => {
-              const emp = staffMap[adv.employee_id] || { name: 'Staff Member', department: 'WORKER', base_salary: 12000 }
+              const emp = staffMap[adv.employee_id] || { name: 'Former Staff', department: '—', base_salary: 0 }
 
               return (
                 <div
@@ -280,6 +292,8 @@ export function HrmsApprovalPage() {
                           className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
                             adv.status === 'Approved'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : adv.status === 'Closed'
+                              ? 'bg-slate-100 text-slate-600 border border-slate-200'
                               : 'bg-rose-50 text-rose-700 border border-rose-200'
                           }`}
                         >

@@ -15,7 +15,6 @@ import {
 import { authService } from '../services/authService'
 import { UserModal } from '../components/ui/UserModal'
 import { useAuth } from '../context/AuthContext'
-import { staffStorageService } from '../Systems/HRMS/services/hrmsStorageService'
 
 export function GlobalSettingsPage() {
   const { currentUser, refreshUser } = useAuth()
@@ -42,7 +41,6 @@ export function GlobalSettingsPage() {
       const res = await authService.fetchAllUsers()
       if (res.success) {
         setUsers(res.users)
-        staffStorageService.syncFromMasterUsers(res.users)
       } else {
         showNotification(res.error || 'Failed to fetch users.', 'error')
       }
