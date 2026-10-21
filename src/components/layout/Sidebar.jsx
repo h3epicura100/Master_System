@@ -29,6 +29,7 @@ import {
   ConciergeBell,
   Briefcase,
   BellRing,
+  BarChart3,
   CalendarCheck,
   CreditCard,
   CheckSquare,
@@ -107,6 +108,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
     { name: 'Outsourcing Team', path: '/pms/outsourcing-team', icon: Briefcase, show: canAccessPage('pms', 'outsourcingTeam'), key: 'outsourcingTeam' },
     { name: 'Master Data', path: '/pms/masters', icon: Sliders, show: canAccessPage('pms', 'masters'), key: 'masters' },
     { name: 'Delay & Logs', path: '/pms/notifications', icon: BellRing, show: canAccessPage('pms', 'notifications') || isAdmin(), key: 'notifications' },
+    { name: 'Employee MIS', path: '/pms/mis', icon: BarChart3, show: canAccessPage('pms', 'mis'), key: 'mis' },
   ].filter((item) => item.show)
 
   const crockeryNavItems = [

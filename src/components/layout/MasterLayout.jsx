@@ -64,6 +64,8 @@ export function MasterLayout() {
         return 'H3MS · Master Data'
       case '/pms/notifications':
         return 'H3MS · Delay & Notification Logs'
+      case '/pms/mis':
+        return 'H3MS · Employee MIS'
       case '/crockery/dashboard':
         return 'Crockery · Dashboard'
       case '/crockery/stock':

@@ -35,6 +35,7 @@ import { PmsWaitersPage } from './Systems/PMS/pages/PmsWaitersPage'
 import { PmsOutsourcingPage } from './Systems/PMS/pages/PmsOutsourcingPage'
 import { PmsMastersPage } from './Systems/PMS/pages/PmsMastersPage'
 import { PmsNotificationsPage } from './Systems/PMS/pages/PmsNotificationsPage'
+import { PmsMisPage } from './Systems/PMS/pages/PmsMisPage'
 
 // Crockery & Cutlery (IMS) Pages
 import { CrockeryDashboardPage } from './Systems/Crockery/pages/CrockeryDashboardPage'
@@ -294,6 +295,14 @@ export function App() {
               element={
                 <ProtectedRoute system="pms" page="notifications">
                   <PmsNotificationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pms/mis"
+              element={
+                <ProtectedRoute system="pms" page="mis">
+                  <PmsMisPage />
                 </ProtectedRoute>
               }
             />

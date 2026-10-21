@@ -171,6 +171,7 @@ export const PMS_PAGES = [
   // Masters & Delay Logs
   { id: 'masters', name: 'Master Data', route: '/pms/masters', desc: 'System configuration, items, units & categories' },
   { id: 'notifications', name: 'Delay & Notification Logs', route: '/pms/notifications', desc: 'System delay logs and automated WhatsApp alerts' },
+  { id: 'mis', name: 'Employee MIS & Performance', route: '/pms/mis', desc: 'Staff task scorecard, department workload & overdue escalations' },
 ]
 
 // Page Definitions for Crockery IMS module (4 pages)
