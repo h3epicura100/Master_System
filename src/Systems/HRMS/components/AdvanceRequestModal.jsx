@@ -13,7 +13,8 @@ import { formatINR } from '../services/hrmsCalculations'
 import { useAuth } from '../../../context/AuthContext'
 
 export function AdvanceRequestModal({ isOpen, onClose, onSave, staff = [] }) {
-  const { currentUser } = useAuth()
+  const { currentUser, isAdmin, getModuleRole } = useAuth()
+  const isUserAdmin = isAdmin() || getModuleRole('hrms') === 'admin'
   const activeStaff = staff
 
   const [employeeId, setEmployeeId] = useState('')

@@ -144,14 +144,6 @@ export const hrmsService = {
     return fromDb('hrms_attendance', saved)
   },
 
-  quickCheckIn(employee_id, marked_by) {
-    return this.recordPunch({ employee_id, type: 'in', marked_by })
-  },
-
-  quickCheckOut(employee_id, marked_by) {
-    return this.recordPunch({ employee_id, type: 'out', marked_by })
-  },
-
   async deleteAttendance(id) {
     unwrap(await supabase.from('hrms_attendance').delete().eq('id', id))
     notifyChange()

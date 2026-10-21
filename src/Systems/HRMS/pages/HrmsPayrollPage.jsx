@@ -426,7 +426,7 @@ export function HrmsPayrollPage() {
                     {/* Slip Button */}
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <button
-                        onClick={() => setSelectedSlipItem({ employee: emp, calc })}
+                        onClick={() => setSelectedSlipItem({ employee: emp, calc, status, paidAt: item.record?.paid_at })}
                         className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1.5"
                       >
                         <FileText className="w-3.5 h-3.5" />

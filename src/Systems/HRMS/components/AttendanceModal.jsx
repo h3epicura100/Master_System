@@ -65,6 +65,7 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
   // Camera start
   const startCamera = async () => {
     setCameraError(null)
+    stopCamera()
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -77,11 +78,11 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
         }
         setCameraActive(true)
       } else {
-        setCameraError('Camera API not supported in this browser. Simulation mode active.')
+        setCameraError('Camera is not supported in this browser. Use a browser/device with a camera.')
       }
     } catch (err) {
       console.warn('Camera access denied or unavailable:', err)
-      setCameraError('Camera permission denied or camera in use. Simulated live camera mode active.')
+      setCameraError('Camera permission denied or camera in use. Allow camera access and retry.')
       setCameraActive(false)
     }
   }
@@ -138,30 +139,24 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
 
   // Capture face photo with stamped corner overlay directly on canvas
   const handleCapture = () => {
+    // Re-take: discard the photo and return to the live camera view
+    if (capturedPhoto) {
+      setCapturedPhoto(null)
+      return
+    }
+
+    const video = videoRef.current
+    if (!video || !cameraActive || !video.videoWidth) {
+      setErrorMsg('Camera is not ready. Allow camera access and try again.')
+      return
+    }
+    setErrorMsg('')
+
     const canvas = document.createElement('canvas')
     canvas.width = 640
     canvas.height = 480
     const ctx = canvas.getContext('2d')
-
-    if (videoRef.current && cameraActive) {
-      ctx.drawImage(videoRef.current, 0, 0, 640, 480)
-    } else {
-      // Create simulated stamped capture photo
-      const grad = ctx.createLinearGradient(0, 0, 640, 480)
-      grad.addColorStop(0, '#1e293b')
-      grad.addColorStop(1, '#0f172a')
-      ctx.fillStyle = grad
-      ctx.fillRect(0, 0, 640, 480)
-
-      // Silhouette avatar
-      ctx.fillStyle = '#334155'
-      ctx.beginPath()
-      ctx.arc(320, 200, 70, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.beginPath()
-      ctx.arc(320, 360, 120, 0, Math.PI, true)
-      ctx.fill()
-    }
+    ctx.drawImage(video, 0, 0, 640, 480)
 
     // --- Burn-in Watermark Stamp onto the Captured Canvas ---
     const cardWidth = 330
@@ -207,6 +202,10 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!employeeId || saving) return
+    if (!capturedPhoto) {
+      setErrorMsg('Please capture the face photo before saving the punch.')
+      return
+    }
     setErrorMsg('')
     setSaving(true)
     try {
@@ -217,7 +216,7 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
         time,
         location: location.trim(),
         coordinates,
-        photo: capturedPhoto || '',
+        photo: capturedPhoto,
         marked_by: currentUser?.id || null
       })
       if (onSave) onSave()
@@ -392,15 +391,15 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
             </div>
 
             <div className="relative aspect-video max-h-64 sm:max-h-72 w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 shadow-inner flex items-center justify-center">
-              {capturedPhoto ? (
+              {/* Video stays mounted so the stream survives a re-take */}
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                className={`w-full h-full object-cover ${cameraActive && !capturedPhoto ? 'block' : 'hidden'}`}
+              />
+              {capturedPhoto && (
                 <img src={capturedPhoto} alt="Captured punch" className="w-full h-full object-cover" />
-              ) : (
-                <video
-                  ref={videoRef}
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
-                />
               )}
 
               {!cameraActive && !capturedPhoto && (
@@ -412,8 +411,17 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
                     {cameraError || 'Position staff member in front of camera'}
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    Click "Capture Face" below to stamp timestamp & GPS onto attendance photo
+                    A live face photo is required to record attendance
                   </p>
+                  {cameraError && (
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="mt-1 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold"
+                    >
+                      Retry Camera
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -441,7 +449,8 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
               <button
                 type="button"
                 onClick={handleCapture}
-                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-1.5"
+                disabled={!cameraActive && !capturedPhoto}
+                className="disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-1.5"
               >
                 <Camera className="w-3.5 h-3.5" />
                 <span>{capturedPhoto ? 'Re-take Face Photo' : 'Capture Face Photo'}</span>
