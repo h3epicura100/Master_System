@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -8,6 +8,14 @@ export function MasterLayout() {
   useRealtime()
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
+
+  // Lock document scrolling while the shell is mounted (see html.app-shell in index.css)
+  useEffect(() => {
+    const html = document.documentElement
+    html.classList.add('app-shell')
+    window.scrollTo(0, 0)
+    return () => html.classList.remove('app-shell')
+  }, [])
 
   // Dynamic header title based on current route
   const getPageTitle = () => {

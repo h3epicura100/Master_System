@@ -699,10 +699,10 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[94vh] sm:max-h-[92vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-3xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 flex flex-col h-[95dvh] sm:h-auto sm:max-h-[92vh] overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 bg-slate-50/70">
+        <div className="shrink-0 flex items-center justify-between gap-2 px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-violet-600/10 text-violet-600 flex items-center justify-center font-bold shrink-0">
               <User className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -727,20 +727,21 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center px-4 sm:px-6 border-b border-slate-200 bg-white overflow-x-auto scrollbar-none">
+        <div className="shrink-0 px-4 sm:px-6 py-2.5 border-b border-slate-200 bg-white">
+          <div className={`grid ${formData.role !== 'admin' ? 'grid-cols-2' : 'grid-cols-1'} gap-1 p-1 rounded-xl bg-slate-100`}>
           <button
             type="button"
             onClick={() => setActiveTab('details')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 whitespace-nowrap transition-colors ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg font-bold text-xs sm:text-sm whitespace-nowrap transition-all min-w-0 ${
               activeTab === 'details'
-                ? 'border-violet-600 text-violet-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-violet-700 shadow-sm ring-1 ring-slate-200'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <User className="w-4 h-4" />
-            <span>User Details</span>
+            <User className="w-4 h-4 shrink-0" />
+            <span className="truncate"><span className="hidden sm:inline">User </span>Details</span>
             {formData.role === 'admin' && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 ml-1">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700">
                 Full Access (Admin)
               </span>
             )}
@@ -750,31 +751,33 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
             <button
               type="button"
               onClick={() => setActiveTab('permissions')}
-              className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 whitespace-nowrap transition-colors ${
+              className={`flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-lg font-bold text-xs sm:text-sm whitespace-nowrap transition-all min-w-0 ${
                 activeTab === 'permissions'
-                  ? 'border-violet-600 text-violet-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-violet-700 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Shield className="w-4 h-4" />
-              <span>Page Permissions</span>
-              <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-violet-100 text-violet-700">
+              <Shield className="w-4 h-4 shrink-0" />
+              <span className="truncate"><span className="hidden sm:inline">Page </span>Permissions</span>
+              <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-violet-100 text-violet-700 shrink-0">
                 {totalEnabledPages}/{TOTAL_PAGE_COUNT}
               </span>
             </button>
           )}
+          </div>
         </div>
 
         {/* Error Notice */}
         {errorMsg && (
-          <div className="mx-4 sm:mx-6 mt-3 sm:mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-rose-700 text-xs font-medium">
+          <div className="shrink-0 mx-4 sm:mx-6 mt-3 sm:mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-rose-700 text-xs font-medium">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Modal Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 sm:space-y-6">
           {/* TAB 1: USER DETAILS */}
           {activeTab === 'details' && (
             <div className="space-y-4 sm:space-y-5 animate-in fade-in-50 duration-150">
@@ -1504,12 +1507,14 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
             </div>
           )}
 
-          {/* Modal Actions Footer */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 sticky bottom-0 bg-white">
+          </div>
+
+          {/* Modal Actions Footer (outside the scroller so it never covers content) */}
+          <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-100 flex items-center justify-between gap-3 bg-white">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors"
+              className="shrink-0 px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors"
             >
               Cancel
             </button>
@@ -1517,7 +1522,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2 disabled:opacity-50"
+              className="flex-1 sm:flex-none justify-center px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2 disabled:opacity-50"
             >
               {saving ? (
                 <>
