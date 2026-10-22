@@ -77,11 +77,13 @@ async function uploadAttendancePhoto(dataUrl, employeeId, date, type) {
 
 export const hrmsService = {
   // 1. STAFF (read-only here; managed via Global Settings)
+  // Active non-admin users only: inactive users have left, master admins are not payroll staff
   async getStaff() {
     const data = unwrap(await supabase
       .from('master_users')
       .select('*')
       .eq('is_active', true)
+      .neq('role', 'admin')
       .order('full_name'))
     return data.map(mapMasterUserToStaff)
   },
