@@ -133,47 +133,47 @@ export function HrmsOvertimePage() {
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200 w-full min-w-0 max-w-full overflow-hidden">
       {/* KPI Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-5">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Logged OT</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">{totalOtHours.toFixed(1)} hrs</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Across all departments</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Total Logged OT</span>
+            <span className="text-base sm:text-3xl font-extrabold text-slate-900 mt-1 block truncate">{totalOtHours.toFixed(1)} hrs</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Across all departments</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 items-center justify-center font-bold shrink-0">
             <Clock className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pending Approval</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-amber-600 mt-1 block">{pendingOtCount}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Hours awaiting review</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Pending Approval</span>
+            <span className="text-base sm:text-3xl font-extrabold text-amber-600 mt-1 block truncate">{pendingOtCount}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Hours awaiting review</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 items-center justify-center font-bold shrink-0">
             <AlertCircle className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Approved OT Payout</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-1 block">{formatINR(totalApprovedPayout)}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Disbursed with payroll</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Approved OT Payout</span>
+            <span className="text-base sm:text-3xl font-extrabold text-emerald-600 mt-1 block truncate">{formatINR(totalApprovedPayout)}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Disbursed with payroll</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 items-center justify-center font-bold shrink-0">
             <Banknote className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Standard Rate</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-violet-600 mt-1 block">1.5x</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Hourly wage multiplier</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Standard Rate</span>
+            <span className="text-base sm:text-3xl font-extrabold text-violet-600 mt-1 block truncate">1.5x</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Hourly wage multiplier</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 items-center justify-center font-bold shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
         </div>
@@ -220,9 +220,76 @@ export function HrmsOvertimePage() {
         )}
       </div>
 
-      {/* Overtime Table */}
-      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
-        <div className="max-h-[340px] sm:max-h-[calc(100vh-370px)] min-h-[260px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
+      {/* Overtime — mobile cards */}
+      <div className="md:hidden space-y-2.5">
+        {filteredOt.length === 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200/90 py-10 text-center text-sm font-semibold text-slate-500">
+            No overtime entries found
+          </div>
+        )}
+        {filteredOt.map((ot) => {
+          const emp = staffMap[ot.employee_id] || { name: 'Former Staff', department: '—', base_salary: 0 }
+          const isPending = ot.status === 'Pending'
+          const statusCls = ot.status === 'Approved'
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : isPending
+            ? 'bg-amber-50 text-amber-800 border-amber-200'
+            : 'bg-rose-50 text-rose-700 border-rose-200'
+          return (
+            <div key={ot.id} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                    {getInitials(emp.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-slate-900 text-sm block leading-tight truncate">{emp.name}</span>
+                    <span className="text-[11px] text-slate-500 block truncate">{ot.date} · {emp.department}</span>
+                  </div>
+                </div>
+                <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-extrabold uppercase tracking-wider shrink-0 ${statusCls}`}>
+                  {ot.status}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Hours</span>
+                  <span className="font-extrabold text-slate-900">{ot.hours} hrs</span>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Hourly</span>
+                  <span className="font-bold text-slate-700">{formatINR(calculateHourlyRate(emp.base_salary))}</span>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">OT Pay</span>
+                  <span className="font-extrabold text-emerald-700">{formatINR(calculateOtPay(ot.hours, emp.base_salary))}</span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 break-words">{ot.reason || 'Overtime support'}</p>
+              {isUserAdmin && isPending && (
+                <div className="pt-2.5 border-t border-slate-100 flex items-center gap-2">
+                  <button
+                    onClick={() => handleApprove(ot.id)}
+                    className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                  </button>
+                  <button
+                    onClick={() => handleReject(ot.id)}
+                    className="flex-1 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Overtime — table (tablet & desktop) */}
+      <div className="hidden md:block bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
+        <div className="sm:max-h-[calc(100vh-370px)] sm:min-h-[260px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
           <table className="w-full text-left border-collapse text-xs min-w-[950px]">
             <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
               <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">

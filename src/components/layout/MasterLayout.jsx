@@ -97,25 +97,29 @@ export function MasterLayout() {
     location.pathname.startsWith('/pms/menu-chatbot')
 
   return (
-    <div className="h-screen bg-[#f8fafc] flex selection:bg-violet-500 selection:text-white w-full max-w-full overflow-hidden relative">
+    // h-dvh: on phones 100vh includes the area behind the browser address bar
+    <div className="h-screen h-dvh bg-[#f8fafc] flex selection:bg-violet-500 selection:text-white w-full max-w-full overflow-hidden relative">
       {/* Sidebar for Desktop & Mobile Overlay */}
       <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-      {/* Main App Container */}
+      {/* Main App Container (the single page scroller) */}
       <div
-        className={`flex-1 flex flex-col min-w-0 w-full max-w-full md:pl-64 h-screen ${
-          isFullHeightPage ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'
+        className={`flex-1 flex flex-col min-w-0 w-full max-w-full md:pl-64 h-screen h-dvh ${
+          isFullHeightPage ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden overscroll-contain'
         }`}
       >
         {/* Topbar Header */}
         <Topbar setMobileOpen={setMobileOpen} title={getPageTitle()} />
 
-        {/* Page Content Outlet */}
+        {/* Page Content Outlet.
+            Regular pages: plain block that grows with its content so the container
+            above scrolls. (A flex column here let page roots with overflow-hidden
+            shrink to screen height and clip on phones.) */}
         <main
-          className={`flex-1 flex flex-col min-w-0 w-full ${
+          className={`flex-1 min-w-0 w-full ${
             isFullHeightPage
-              ? 'min-h-0 overflow-hidden px-2 sm:px-4 lg:px-6 py-2 sm:py-3 max-w-[1680px] mx-auto'
-              : 'px-3 py-3.5 sm:px-6 sm:py-5 lg:px-8 pb-4 sm:pb-6 overflow-x-hidden'
+              ? 'flex flex-col min-h-0 overflow-hidden px-2 sm:px-4 lg:px-6 py-2 sm:py-3 max-w-[1680px] mx-auto'
+              : 'shrink-0 px-3 py-3.5 sm:px-6 sm:py-5 lg:px-8 pb-4 sm:pb-6'
           }`}
         >
           {isFullHeightPage ? (

@@ -179,7 +179,7 @@ export function HrmsPayrollPage() {
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200 w-full min-w-0 max-w-full overflow-hidden">
       {/* Sub Tabs: Current Month, Paid */}
-      <div className="flex items-center gap-2 border-b border-slate-200/90 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/90 pb-2">
         <button
           onClick={() => setSubTab('current')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -210,36 +210,36 @@ export function HrmsPayrollPage() {
       </div>
 
       {/* 3 Master KPI Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-5">
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+      <div className="grid grid-cols-3 gap-2 sm:gap-5">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Payroll Period</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">{range.shortLabel}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">{totalEmployees} Active staff</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Payroll Period</span>
+            <span className="text-base sm:text-3xl font-extrabold text-slate-900 mt-1 block truncate">{range.shortLabel}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">{totalEmployees} Active staff</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 items-center justify-center font-bold shrink-0">
             <Calendar className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Gross Pay</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">{formatINR(totalGrossPay)}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Incl. OT & incentives</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Total Gross Pay</span>
+            <span className="text-base sm:text-3xl font-extrabold text-slate-900 mt-1 block truncate">{formatINR(totalGrossPay)}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Incl. OT & incentives</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 items-center justify-center font-bold shrink-0">
             <Banknote className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Net Pay</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-1 block">{formatINR(totalNetPay)}</span>
-            <span className="text-xs text-emerald-600 font-bold mt-0.5 block">{paidPercent}% Paid</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Total Net Pay</span>
+            <span className="text-base sm:text-3xl font-extrabold text-emerald-600 mt-1 block truncate">{formatINR(totalNetPay)}</span>
+            <span className="hidden sm:block text-xs text-emerald-600 font-bold mt-0.5">{paidPercent}% Paid</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 items-center justify-center font-bold shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
         </div>
@@ -253,9 +253,119 @@ export function HrmsPayrollPage() {
         </span>
       </div>
 
-      {/* Payroll Table */}
-      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
-        <div className="max-h-[340px] sm:max-h-[calc(100vh-370px)] min-h-[260px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
+      {/* Payroll — mobile cards */}
+      <div className="md:hidden space-y-2.5">
+        {displayedList.length === 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200/90 py-10 text-center text-slate-400">
+            <Banknote className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+            <p className="font-semibold text-slate-600 text-sm">
+              {loading ? 'Loading payroll...' : subTab === 'paid' ? 'No salaries paid for this month yet' : 'No active staff — add staff in Global Settings'}
+            </p>
+          </div>
+        )}
+        {displayedList.map((item) => {
+          const { emp, pendingOtHours, calc, status } = item
+          const isBusy = busyEmpId === emp.id
+          const statusCls = status === 'Paid'
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-amber-50 text-amber-800 border-amber-200'
+          return (
+            <div key={emp.id} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                    {getInitials(emp.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-slate-900 text-sm block leading-tight truncate">{emp.name}</span>
+                    <span className="text-[11px] text-slate-500 block truncate">{emp.designation} · {emp.department}</span>
+                  </div>
+                </div>
+                {isUserAdmin ? (
+                  <select
+                    value={status}
+                    disabled={isBusy}
+                    onChange={(e) => handleStatusChange(item, e.target.value)}
+                    className={`py-1 px-2 rounded-lg text-xs font-bold border shrink-0 ${statusCls}`}
+                  >
+                    <option value="Hold">Hold</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Paid">Paid</option>
+                  </select>
+                ) : (
+                  <span className={`py-1 px-2.5 rounded-lg text-xs font-bold border shrink-0 ${statusCls}`}>{status}</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Present Days</span>
+                  <span className="font-extrabold text-slate-900">{calc.effectivePresentDays} / {calc.daysCounted}d</span>
+                  {pendingOtHours > 0 && <span className="block text-[10px] text-amber-600 font-bold">OT {pendingOtHours}h pending</span>}
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Paid Leave</span>
+                  <span className="font-bold text-slate-800">{calc.usedLeaves} / {calc.allowedLeaves} used</span>
+                  <span className={`block text-[10px] font-bold ${calc.cutDays > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {calc.cutDays > 0 ? `-${calc.cutDays} days cut` : '0 salary cut'}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Gross Wage</span>
+                  <span className="font-bold text-slate-900">{formatINR(calc.grossPay - calc.otPay)}</span>
+                  {(calc.incentives > 0 || (isUserAdmin && status !== 'Paid')) && (
+                    <button
+                      type="button"
+                      disabled={!isUserAdmin || status === 'Paid' || isBusy}
+                      onClick={() => setIncentiveItem(item)}
+                      className="block text-[10px] font-bold text-violet-600 enabled:hover:underline disabled:cursor-default"
+                    >
+                      {calc.incentives > 0 ? `incl. ${formatINR(calc.incentives)} incentive` : '+ Incentive'}
+                    </button>
+                  )}
+                </div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 px-2.5 py-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">OT Pay / EMI</span>
+                  <span className="font-bold text-emerald-700">{formatINR(calc.otPay)}</span>
+                  <span className={`block text-[10px] font-bold ${calc.advanceEmi > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                    EMI {calc.advanceEmi > 0 ? `-${formatINR(calc.advanceEmi)}` : '₹0'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
+                <div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Net Pay</span>
+                  <span className="text-lg font-extrabold text-slate-900">{formatINR(calc.netPay)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {isUserAdmin && (
+                    <button
+                      disabled={isBusy}
+                      onClick={() => handleStatusChange(item, status === 'Paid' ? 'Hold' : 'Paid')}
+                      className={`disabled:opacity-50 px-3 py-2 rounded-lg text-xs font-bold ${
+                        status === 'Paid' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-600 text-white'
+                      }`}
+                    >
+                      {status === 'Paid' ? 'Revert' : 'Submit'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedSlipItem({ employee: emp, calc, status, paidAt: item.record?.paid_at })}
+                    className="px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    <FileText className="w-3.5 h-3.5" /> Slip
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Payroll — table (tablet & desktop) */}
+      <div className="hidden md:block bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
+        <div className="sm:max-h-[calc(100vh-370px)] sm:min-h-[260px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
           <table className="w-full text-left border-collapse text-xs min-w-[1050px]">
             <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
               <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">

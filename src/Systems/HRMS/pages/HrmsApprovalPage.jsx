@@ -103,47 +103,47 @@ export function HrmsApprovalPage() {
   return (
     <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-200 w-full min-w-0 max-w-full overflow-hidden">
       {/* KPI Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5">
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-5">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pending Approvals</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-amber-600 mt-1 block">{pendingCount}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Awaiting review</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Pending Approvals</span>
+            <span className="text-base sm:text-3xl font-extrabold text-amber-600 mt-1 block truncate">{pendingCount}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Awaiting review</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 items-center justify-center font-bold shrink-0">
             <Clock className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Requested Amount</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">{formatINR(totalPendingAmount)}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Total pending loans</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Requested Amount</span>
+            <span className="text-base sm:text-3xl font-extrabold text-slate-900 mt-1 block truncate">{formatINR(totalPendingAmount)}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Total pending loans</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-violet-50 text-violet-600 items-center justify-center font-bold shrink-0">
             <CreditCard className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Approved Loans</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-1 block">{approvedCount}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Active recovery schedules</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Approved Loans</span>
+            <span className="text-base sm:text-3xl font-extrabold text-emerald-600 mt-1 block truncate">{approvedCount}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Active recovery schedules</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 items-center justify-center font-bold shrink-0">
             <CheckCircle2 className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 min-w-0">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Rejected Requests</span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-rose-600 mt-1 block">{rejectedCount}</span>
-            <span className="text-xs text-slate-500 font-medium mt-0.5 block">Declined applications</span>
+            <span className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">Rejected Requests</span>
+            <span className="text-base sm:text-3xl font-extrabold text-rose-600 mt-1 block truncate">{rejectedCount}</span>
+            <span className="hidden sm:block text-xs text-slate-500 font-medium mt-0.5">Declined applications</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+          <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 items-center justify-center font-bold shrink-0">
             <XCircle className="w-6 h-6" />
           </div>
         </div>
@@ -266,8 +266,45 @@ export function HrmsApprovalPage() {
       {/* Handled History Table */}
       <div className="space-y-3 pt-2 w-full min-w-0 max-w-full">
         <h4 className="text-sm font-bold text-slate-800">Review History ({handledRequests.length})</h4>
-        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
-          <div className="max-h-[300px] sm:max-h-[360px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
+
+        {/* Mobile cards */}
+        <div className="md:hidden space-y-2">
+          {handledRequests.length === 0 && (
+            <p className="bg-white rounded-2xl border border-slate-200/90 py-6 text-center text-xs text-slate-400">No reviewed requests yet.</p>
+          )}
+          {handledRequests.map((adv) => {
+            const emp = staffMap[adv.employee_id] || { name: 'Former Staff' }
+            return (
+              <div key={adv.id} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-slate-900 text-sm block truncate">{emp.name}</span>
+                    <span className="text-[11px] text-slate-500">{adv.request_date}</span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase shrink-0 ${
+                      adv.status === 'Approved'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : adv.status === 'Closed'
+                        ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                    }`}
+                  >
+                    {adv.status}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-slate-900">{formatINR(adv.amount)}</span>
+                  <span className="font-bold text-violet-700">EMI {formatINR(adv.monthly_emi)}/mo</span>
+                </div>
+                {adv.reason && <p className="text-xs text-slate-600 break-words">{adv.reason}</p>}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="hidden md:block bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full min-w-0 max-w-full">
+          <div className="sm:max-h-[360px] overflow-x-auto overflow-y-auto w-full max-w-full block relative custom-scrollbar pb-2">
             <table className="w-full text-left border-collapse text-xs min-w-[850px]">
               <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs shadow-xs">
                 <tr className="border-b border-slate-200/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">

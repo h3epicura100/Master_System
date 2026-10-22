@@ -232,33 +232,34 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[94vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl bg-white rounded-t-2xl sm:rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[95dvh] sm:max-h-[94vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/70">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-600/10 text-violet-600 flex items-center justify-center font-bold shrink-0">
+        <div className="shrink-0 flex items-center justify-between gap-2 px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 bg-slate-50/70">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-violet-600/10 text-violet-600 flex items-center justify-center font-bold shrink-0">
               <Camera className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
                 Record Attendance Punch
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] sm:text-xs text-slate-500 truncate">
                 Face scan & live GPS location stamped onto record
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+            className="p-2 rounded-xl shrink-0 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
             {/* Employee Selector */}
             <div>
@@ -390,7 +391,7 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
               </span>
             </div>
 
-            <div className="relative aspect-video max-h-64 sm:max-h-72 w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 shadow-inner flex items-center justify-center">
+            <div className="relative aspect-[4/3] sm:aspect-video max-h-64 sm:max-h-72 w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 shadow-inner flex items-center justify-center">
               {/* Video stays mounted so the stream survives a re-take */}
               <video
                 ref={videoRef}
@@ -426,7 +427,7 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
               )}
 
               {/* Glassmorphism Corner Stamp Overlay */}
-              <div className="absolute bottom-3 right-3 max-w-[85%] sm:max-w-xs bg-slate-950/80 backdrop-blur-md border border-white/20 rounded-xl p-2.5 text-white shadow-xl text-[10px] sm:text-[11px] space-y-0.5">
+              <div className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 max-w-[80%] sm:max-w-xs bg-slate-950/80 backdrop-blur-md border border-white/20 rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-white shadow-xl text-[9px] sm:text-[11px] space-y-0.5">
                 <div className="flex items-center gap-1.5 font-bold">
                   <span className={`w-2 h-2 rounded-full ${punchType === 'in' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                   <span className="uppercase">{punchType.toUpperCase()}</span>
@@ -445,18 +446,18 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
             </div>
 
             {/* Capture and Re-take controls */}
-            <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
               <button
                 type="button"
                 onClick={handleCapture}
                 disabled={!cameraActive && !capturedPhoto}
-                className="disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-1.5"
+                className="disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto justify-center px-4 py-2.5 sm:py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-1.5"
               >
                 <Camera className="w-3.5 h-3.5" />
                 <span>{capturedPhoto ? 'Re-take Face Photo' : 'Capture Face Photo'}</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between sm:justify-end gap-2">
                 <button
                   type="button"
                   onClick={fetchLocation}
@@ -488,12 +489,14 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
             </div>
           )}
 
-          {/* Modal Footer */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 sticky bottom-0 bg-white">
+          </div>
+
+          {/* Modal Footer (outside the scroller so it never covers content) */}
+          <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-100 flex items-center justify-between gap-3 bg-white">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+              className="shrink-0 px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
             >
               Cancel
             </button>
@@ -501,7 +504,7 @@ export function AttendanceModal({ isOpen, onClose, onSave, staff = [], preselect
             <button
               type="submit"
               disabled={saving || isLocating}
-              className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex-1 sm:flex-none justify-center px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold shadow-md shadow-violet-200 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               <span>{saving ? 'Saving...' : 'Confirm & Save Punch'}</span>
