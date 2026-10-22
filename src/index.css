@@ -41,8 +41,18 @@
     min-height: 0;
   }
 
+
   *, *::before, *::after {
     box-sizing: border-box;
+  }
+}
+
+@layer utilities {
+  /* Visible screen height with a 100vh fallback. One class on purpose: combining
+     Tailwind's h-screen + h-dvh lets h-screen win (it is emitted later in the CSS). */
+  .h-app {
+    height: 100vh;
+    height: 100dvh;
   }
 }
 

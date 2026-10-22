@@ -105,14 +105,14 @@ export function MasterLayout() {
     location.pathname.startsWith('/pms/menu-chatbot')
 
   return (
-    // h-dvh: on phones 100vh includes the area behind the browser address bar
-    <div className="h-screen h-dvh bg-[#f8fafc] flex selection:bg-violet-500 selection:text-white w-full max-w-full overflow-hidden relative">
+    // h-app (index.css): visible screen height; on phones 100vh includes the area behind the address bar
+    <div className="h-app bg-[#f8fafc] flex selection:bg-violet-500 selection:text-white w-full max-w-full overflow-hidden relative">
       {/* Sidebar for Desktop & Mobile Overlay */}
       <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
       {/* Main App Container (the single page scroller) */}
       <div
-        className={`flex-1 flex flex-col min-w-0 w-full max-w-full md:pl-64 h-screen h-dvh ${
+        className={`flex-1 flex flex-col min-w-0 w-full max-w-full md:pl-64 h-app ${
           isFullHeightPage ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden overscroll-contain'
         }`}
       >
