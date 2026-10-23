@@ -2,7 +2,7 @@ import React from 'react';
 import { Calendar, ClipboardList, Download, FileText, Loader2 } from 'lucide-react';
 import { formatDate } from '../../utils/helpers';
 
-const PartyCard = ({ partyName, eventDate, totalQty, totalCost, isDownloading, onDownloadReport, onClick }) => {
+const PartyCard = ({ partyName, eventDate, dateLabel = 'Event Date', totalQty, totalCost, isDownloading, onDownloadReport, onClick, downloadTooltip = 'Download Report' }) => {
   return (
     <div 
       onClick={onClick}
@@ -24,7 +24,7 @@ const PartyCard = ({ partyName, eventDate, totalQty, totalCost, isDownloading, o
               onDownloadReport();
             }}
             disabled={isDownloading}
-            title="Download Issue Report"
+            title={downloadTooltip}
             className="flex items-center justify-center h-9 w-9 bg-white text-violet-600 border border-violet-100 rounded-xl hover:bg-violet-600 hover:text-white hover:border-violet-600 transition-all shadow-sm active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
           >
             {isDownloading ? (
@@ -37,13 +37,13 @@ const PartyCard = ({ partyName, eventDate, totalQty, totalCost, isDownloading, o
 
         {/* Content Section */}
         <div className="space-y-3">
-          {/* Event Date */}
+          {/* Event Date / Return Date */}
           <div className="flex items-center gap-2.5 text-xs text-slate-500">
             <div className="flex items-center justify-center h-6.5 w-6.5 bg-violet-100/70 rounded-lg text-violet-600">
               <Calendar className="h-3.5 w-3.5" />
             </div>
             <div>
-              <span className="font-semibold text-slate-400 block text-[9px] uppercase tracking-wider">Event Date</span>
+              <span className="font-semibold text-slate-400 block text-[9px] uppercase tracking-wider">{dateLabel}</span>
               <span className="font-bold text-slate-700">{formatDate(eventDate)}</span>
             </div>
           </div>

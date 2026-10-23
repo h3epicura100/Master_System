@@ -77,6 +77,7 @@ const Inventory = () => {
   // Filter States - Issued History
   const [issuedFilterItem, setIssuedFilterItem] = useState("");
   const [issuedFilterType, setIssuedFilterType] = useState("");
+  const [issuedFilterEventType, setIssuedFilterEventType] = useState("");
   const [issuedFilterParty, setIssuedFilterParty] = useState("");
   const [issuedStartDate, setIssuedStartDate] = useState("");
   const [issuedEndDate, setIssuedEndDate] = useState("");
@@ -242,6 +243,21 @@ const Inventory = () => {
 
   const [matchingIssuedRows, setMatchingIssuedRows] = useState([]);
 
+  const getItemAvailableStock = (row) => {
+    if (row?.itemId && itemStockMap[row.itemId]?.current_stock != null) {
+      return Number(itemStockMap[row.itemId].current_stock);
+    }
+    const match = items.find(i => 
+      (row?.itemId && i.id === row.itemId) || 
+      (normalizeForMatch(i.item_name) === normalizeForMatch(row?.itemName) && 
+       (!row?.inventoryType || normalizeForMatch(i.inventory_type) === normalizeForMatch(row.inventoryType)))
+    );
+    if (match && itemStockMap[match.id]?.current_stock != null) {
+      return Number(itemStockMap[match.id].current_stock);
+    }
+    return 0;
+  };
+
   // Column Visibility & Config — keys map directly to fields on the mapped
   // issue/return row objects (see fetchHistory below), not sheet indices.
   const [visibleColumns, setVisibleColumns] = useState({
@@ -250,10 +266,12 @@ const Inventory = () => {
     type: true,
     item: true,
     qty: true,
+    availableStock: true,
     party: true,
     eventDate: true,
     eventType: true,
     estimatedCost: true,
+    unitPrice: true,
     returnDate: true,
     damage: true,
     missing: true,
@@ -269,15 +287,17 @@ const Inventory = () => {
     { key: 'serial', label: 'Serial' },
     { key: 'type', label: 'Type' },
     { key: 'item', label: 'Item Name' },
+    { key: 'availableStock', label: 'Available Stock' },
     { key: 'qty', label: 'Issue Qty' },
+    { key: 'dishes', label: 'Dishes' },
+    { key: 'unitPrice', label: 'Per Unit Price' },
+    { key: 'estimatedCost', label: 'Estimated Cost' },
     { key: 'image', label: 'Image' },
     { key: 'date', label: 'Entry Date' },
     { key: 'for', label: 'For' },
     { key: 'party', label: 'Party Name' },
     { key: 'eventDate', label: 'Event Date' },
     { key: 'eventType', label: 'Event Type' },
-    { key: 'estimatedCost', label: 'Estimated Cost' },
-    { key: 'dishes', label: 'Dishes' },
     { key: 'actions', label: 'Actions' }
   ] : [
     { key: 'serial', label: 'Serial' },
@@ -285,6 +305,7 @@ const Inventory = () => {
     { key: 'item', label: 'Item Name' },
     { key: 'issueQty', label: 'Issue Qty' },
     { key: 'qty', label: 'Return / Remaining' },
+    { key: 'availableStock', label: 'Available Stock' },
     { key: 'image', label: 'Image' },
     { key: 'date', label: 'Entry Date' },
     { key: 'for', label: 'For' },
@@ -293,9 +314,19 @@ const Inventory = () => {
     { key: 'damage', label: 'Damage' },
     { key: 'missing', label: 'Missing' },
     { key: 'notReturned', label: 'Not Returned / Consumed' },
-    { key: 'totalCost', label: 'Total Cost' },
+    { key: 'unitPrice', label: 'Per Unit Price' },
+    { key: 'totalCost', label: 'Total Return Price' },
     { key: 'actions', label: 'Actions' }
   ];
+
+  const isGroceryFilteredInReturn = activeTab === 'return' && returnFilterType && (returnFilterType.toLowerCase() === 'grocery' || isConsumableType(returnFilterType));
+
+  const activeColumnConfig = useMemo(() => {
+    return columnConfig.filter(col => {
+      if (isGroceryFilteredInReturn && ['for', 'damage', 'missing'].includes(col.key)) return false;
+      return true;
+    });
+  }, [columnConfig, isGroceryFilteredInReturn]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -558,6 +589,9 @@ const Inventory = () => {
         remarks: row.remarks,
         eventType: row.event_type,
         estimatedCost: row.estimated_cost != null ? row.estimated_cost : (row.for_type === 'H3' ? 0 : (Number(row.issue_qty || 0) * Number(row.renting_rate || 0))),
+        unitPrice: Number(row.renting_rate) > 0
+          ? Number(row.renting_rate)
+          : (Number(row.issue_qty) > 0 && Number(row.estimated_cost) > 0 ? Number(row.estimated_cost) / Number(row.issue_qty) : 0),
         forType: row.for_type,
         issuer: row.issuer,
         dishes: row.dishes,
@@ -600,6 +634,7 @@ const Inventory = () => {
           imageUrl: row.image_url,
           remarks: row.remarks,
           totalCost: row.total_cost != null ? row.total_cost : calculatedCost,
+          unitPrice: isCons ? rentRate : dmgRate,
           forType: row.for_type,
           createdAt: row.created_at
         };
@@ -615,9 +650,10 @@ const Inventory = () => {
     const reportColumns = [
       { header: 'S.No.', dataKey: 'sNo' },
       { header: 'Item Name', dataKey: 'item' },
+      { header: 'Available Stock', dataKey: 'availableStock' },
       { header: 'Qty', dataKey: 'qty' },
-      { header: 'Image', dataKey: 'image' },
       { header: 'Dishes', dataKey: 'dishes' },
+      { header: 'Image', dataKey: 'image' },
       { header: 'Remarks', dataKey: 'remark' }
     ];
 
@@ -631,12 +667,13 @@ const Inventory = () => {
         const marginOffset = 12;
         const availableWidth = pageWidth - marginOffset;
         const colStyles = {
-          sNo: { cellWidth: 15 },
-          item: { cellWidth: 48 },
-          qty: { cellWidth: 20 },
-          image: { cellWidth: 25 },
-          dishes: { cellWidth: 40 },
-          remark: { cellWidth: availableWidth - (15 + 48 + 20 + 25 + 40) }
+          sNo: { cellWidth: 14 },
+          item: { cellWidth: 44 },
+          availableStock: { cellWidth: 24, halign: 'center' },
+          qty: { cellWidth: 18 },
+          dishes: { cellWidth: 36 },
+          image: { cellWidth: 22 },
+          remark: { cellWidth: availableWidth - (14 + 44 + 24 + 18 + 36 + 22) }
         };
 
         const getItemImage = (row) => {
@@ -652,10 +689,12 @@ const Inventory = () => {
         const body = rows.map((row, index) => {
           const itemImg = getItemImage(row);
           const u = row.unit ? ` ${row.unit}` : '';
+          const stockVal = getItemAvailableStock(row);
           return {
             sNo: index + 1,
             item: row.itemName || '-',
             qty: row.qty != null ? `${row.qty}${u}` : '0',
+            availableStock: `${stockVal}${u}`,
             image: itemImg || '',
             dishes: row.dishes || '-',
             remark: ''
@@ -696,9 +735,12 @@ const Inventory = () => {
           doc.text(value, x + labelWidth, y);
         };
 
+        const isGroceryParty = rows.every(r => isConsumableType(r.inventoryType));
         doc.setFontSize(10);
         drawLabelValue("Date: ", formatDate(rows[0].createdAt), 14, 18);
-        drawLabelValue("For: ", rows[0].forType || '-', 65, 18);
+        if (!isGroceryParty) {
+          drawLabelValue("For: ", rows[0].forType || '-', 65, 18);
+        }
         drawLabelValue("Party: ", partyName, 14, 24);
         drawLabelValue("Event-Date: ", formatDate(rows[0].eventDate), 65, 24);
 
@@ -786,7 +828,7 @@ const Inventory = () => {
     setIssuePage(1);
     setPartyDetailPage(1);
     setPartyGroupPage(1);
-  }, [issuedFilterItem, issuedFilterType, issuedFilterParty, issuedStartDate, issuedEndDate, searchTerm]);
+  }, [issuedFilterItem, issuedFilterType, issuedFilterEventType, issuedFilterParty, issuedStartDate, issuedEndDate, searchTerm]);
 
   useEffect(() => {
     setSelectedPartyCard(null);
@@ -797,6 +839,8 @@ const Inventory = () => {
 
   useEffect(() => {
     setReturnPage(1);
+    setPartyDetailPage(1);
+    setPartyGroupPage(1);
   }, [returnFilterItem, returnFilterType, returnFilterParty, returnStartDate, returnEndDate, searchTerm]);
 
   useEffect(() => {
@@ -813,29 +857,37 @@ const Inventory = () => {
     } else { setFilteredItems([]); }
   }, [issueForm.inventoryType, returnForm.inventoryType, items, isIssueModalOpen, isReturnModalOpen]);
 
+  // Rows without an event type are shown as 'Regular' elsewhere on this page
+  const eventTypeOf = (r) => r.eventType || 'Regular';
+
   // Derive Options for Filters
   const issuedOptions = useMemo(() => {
     const effectiveParty = selectedPartyCard || issuedFilterParty;
     const s = normalizeForMatch(searchTerm);
     const filteredByItem = issueHistory.filter(r => {
       const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
-      return matchesSearch && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
+      return matchesSearch && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!issuedFilterEventType || eventTypeOf(r) === issuedFilterEventType) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
     });
     const filteredByType = issueHistory.filter(r => {
       const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
-      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
+      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterEventType || eventTypeOf(r) === issuedFilterEventType) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
     });
     const filteredByParty = issueHistory.filter(r => {
       const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
-      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterType || r.inventoryType === issuedFilterType);
+      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!issuedFilterEventType || eventTypeOf(r) === issuedFilterEventType);
+    });
+    const filteredByEventType = issueHistory.filter(r => {
+      const matchesSearch = !s || [r.serial, r.itemName, r.partyName, r.inventoryType, r.issuer, r.venueName].some(v => v && normalizeForMatch(v).includes(s));
+      return matchesSearch && (!issuedFilterItem || r.itemName === issuedFilterItem) && (!issuedFilterType || r.inventoryType === issuedFilterType) && (!effectiveParty || normalizeForMatch(r.partyName) === normalizeForMatch(effectiveParty));
     });
 
     return {
       items: [...new Set(filteredByItem.map(r => r.itemName).filter(Boolean))].sort(),
       types: [...new Set(filteredByType.map(r => r.inventoryType).filter(Boolean))].sort(),
       parties: [...new Set(filteredByParty.map(r => r.partyName).filter(Boolean))].sort(),
+      eventTypes: [...new Set(filteredByEventType.map(eventTypeOf))].sort(),
     };
-  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty, selectedPartyCard]);
+  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterEventType, issuedFilterParty, selectedPartyCard]);
 
   const returnOptions = useMemo(() => {
     const s = normalizeForMatch(searchTerm);
@@ -866,6 +918,7 @@ const Inventory = () => {
       const matchesSearch = !s || [row.serial, row.itemName, row.partyName, row.inventoryType, row.issuer, row.venueName].some(v => v && normalizeForMatch(v).includes(s));
       const matchesItem = !issuedFilterItem || row.itemName === issuedFilterItem;
       const matchesType = !issuedFilterType || row.inventoryType === issuedFilterType;
+      const matchesEventType = !issuedFilterEventType || eventTypeOf(row) === issuedFilterEventType;
       const matchesParty = !effectiveParty || normalizeForMatch(row.partyName) === normalizeForMatch(effectiveParty);
       let matchesDate = true;
       if (issuedStartDate || issuedEndDate) {
@@ -878,14 +931,16 @@ const Inventory = () => {
           if (rowDate > end) matchesDate = false;
         }
       }
-      return matchesSearch && matchesItem && matchesType && matchesParty && matchesDate;
+      return matchesSearch && matchesItem && matchesType && matchesEventType && matchesParty && matchesDate;
     });
-  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterParty, selectedPartyCard, issuedStartDate, issuedEndDate]);
+  }, [issueHistory, searchTerm, issuedFilterItem, issuedFilterType, issuedFilterEventType, issuedFilterParty, selectedPartyCard, issuedStartDate, issuedEndDate]);
 
-  const shouldGroup = activeTab === 'issued' && !(issuedFilterItem || issuedFilterType || issuedFilterParty || issuedStartDate || issuedEndDate || searchTerm);
+  const shouldGroupIssued = activeTab === 'issued' && !(issuedFilterItem || issuedFilterType || issuedFilterEventType || issuedFilterParty || issuedStartDate || issuedEndDate || searchTerm);
+  const shouldGroupReturn = activeTab === 'return' && !(returnFilterItem || returnFilterType || returnFilterParty || returnStartDate || returnEndDate || searchTerm);
+  const shouldGroup = activeTab === 'issued' ? shouldGroupIssued : shouldGroupReturn;
 
   const groupedIssuedData = useMemo(() => {
-    if (!shouldGroup) return [];
+    if (!shouldGroupIssued) return [];
     const groups = {};
     issueHistory.forEach(row => {
       const party = row.partyName || 'Unknown';
@@ -899,7 +954,24 @@ const Inventory = () => {
       const totalCost = rows.reduce((sum, r) => sum + parseNumber(r.estimatedCost), 0);
       return { partyName: party, latestDate, totalQty, totalCost, rows };
     });
-  }, [issueHistory, shouldGroup]);
+  }, [issueHistory, shouldGroupIssued]);
+
+  const groupedReturnData = useMemo(() => {
+    if (!shouldGroupReturn) return [];
+    const groups = {};
+    returnHistory.forEach(row => {
+      const party = row.partyName || 'Unknown';
+      if (!groups[party]) groups[party] = [];
+      groups[party].push(row);
+    });
+    return Object.entries(groups).map(([party, rows]) => {
+      const latestRow = rows[0];
+      const latestDate = latestRow ? (latestRow.returnDate || latestRow.eventDate || latestRow.createdAt) : '';
+      const totalQty = Math.round(rows.reduce((sum, r) => sum + parseNumber(r.qty), 0) * 100) / 100;
+      const totalCost = rows.reduce((sum, r) => sum + parseNumber(r.totalCost), 0);
+      return { partyName: party, latestDate, totalQty, totalCost, rows };
+    });
+  }, [returnHistory, shouldGroupReturn]);
 
   const filteredReturnHistory = useMemo(() => {
     const s = normalizeForMatch(searchTerm);
@@ -907,10 +979,11 @@ const Inventory = () => {
       const matchesSearch = !s || [row.serial, row.itemName, row.partyName, row.inventoryType].some(v => v && normalizeForMatch(v).includes(s));
       const matchesItem = !returnFilterItem || row.itemName === returnFilterItem;
       const matchesType = !returnFilterType || row.inventoryType === returnFilterType;
-      const matchesParty = !returnFilterParty || normalizeForMatch(row.partyName) === normalizeForMatch(returnFilterParty);
+      const effectiveParty = selectedPartyCard || returnFilterParty;
+      const matchesParty = !effectiveParty || normalizeForMatch(row.partyName) === normalizeForMatch(effectiveParty);
       let matchesDate = true;
       if (returnStartDate || returnEndDate) {
-        const rowDate = parseRowDate(row.eventDate);
+        const rowDate = parseRowDate(row.returnDate || row.eventDate);
         if (!rowDate || isNaN(rowDate)) return true;
         if (returnStartDate && rowDate < new Date(returnStartDate)) matchesDate = false;
         if (returnEndDate) {
@@ -921,7 +994,7 @@ const Inventory = () => {
       }
       return matchesSearch && matchesItem && matchesType && matchesParty && matchesDate;
     });
-  }, [returnHistory, searchTerm, returnFilterItem, returnFilterType, returnFilterParty, returnStartDate, returnEndDate]);
+  }, [returnHistory, searchTerm, returnFilterItem, returnFilterType, returnFilterParty, selectedPartyCard, returnStartDate, returnEndDate]);
 
   const totalInventoryCost = useMemo(() => {
     const data = activeTab === 'issued' ? filteredIssuedHistory : filteredReturnHistory;
@@ -1410,19 +1483,27 @@ const Inventory = () => {
 
   const getFilteredHistory = () => activeTab === 'issued' ? filteredIssuedHistory : filteredReturnHistory;
 
-  const handleGenerateReport = () => {
+  const handleGeneratePartyReturnReport = (partyName) => {
+    setGeneratingReportParty(partyName);
+    handleGenerateReport(partyName);
+  };
+
+  const handleGenerateReport = (explicitParty = null) => {
     const isIssued = activeTab === 'issued';
     const sourceData = isIssued ? filteredIssuedHistory : filteredReturnHistory;
 
+    const targetParty = (typeof explicitParty === 'string' && explicitParty) ? explicitParty : selectedPartyCard;
+
     const filteredReportData = sourceData.filter(row => {
-      if (isIssued && selectedPartyCard) {
-        return normalizeForMatch(row.partyName) === normalizeForMatch(selectedPartyCard);
+      if (targetParty) {
+        return normalizeForMatch(row.partyName) === normalizeForMatch(targetParty);
       }
       return true;
     });
 
     if (filteredReportData.length === 0) {
       showToast('No records to export', 'info');
+      setGeneratingReportParty(null);
       return;
     }
 
@@ -1439,17 +1520,88 @@ const Inventory = () => {
 
     const uniformInfo = {
       date: allSameDate ? commonDateRaw : null,
-      party: (allSameParty ? commonParty : null) || selectedPartyCard || null,
+      party: (allSameParty ? commonParty : null) || targetParty || null,
       for: allSameFor ? commonFor : null,
       eventDate: allSameEventDate ? commonEventDateRaw : null
     };
 
-    const columnsToInclude = columnConfig.filter(col => visibleColumns[col.key] !== false && col.key !== 'actions');
+    // Calendar-day key (local time) so a receive timestamp can be compared with an event date
+    const toDayKey = (v) => {
+      if (!v) return '';
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return '';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    // Items must be received before the event; anything received after it is a late entry
+    const isLateEntry = (row) => {
+      const received = toDayKey(row.createdAt);
+      const event = toDayKey(row.eventDate);
+      return Boolean(received && event && received > event);
+    };
+    const isGroceryRow = (row) => String(row.inventoryType || '').trim().toLowerCase() === 'grocery';
 
-    const reportColumns = [
-      { header: 'S. No.', dataKey: 'sNo' },
-      ...columnsToInclude.map(col => ({ header: col.label, dataKey: col.key })),
-      { header: 'Remark', dataKey: 'remark' }
+    const commonType = firstRow.inventoryType;
+    const allSameType = Boolean(commonType) && filteredReportData.every(row => row.inventoryType === commonType);
+    const allGrocery = filteredReportData.every(isGroceryRow);
+    const allConsumable = filteredReportData.every(row => isConsumableType(row.inventoryType));
+    const commonReturnDateRaw = isIssued ? null : firstRow.returnDate;
+    const allSameReturnDate = !isIssued && Boolean(commonReturnDateRaw) &&
+      filteredReportData.every(row => formatDate(row.returnDate) === formatDate(commonReturnDateRaw));
+    const commonEventType = firstRow.eventType;
+    const allSameEventType = Boolean(commonEventType) && filteredReportData.every(row => row.eventType === commonEventType);
+    const commonUnit = firstRow.unit;
+    const allSameUnit = Boolean(commonUnit) && filteredReportData.every(row => row.unit === commonUnit);
+
+    // Values shared by rows or redundant with headers are suppressed from table columns
+    const headerOnlyColumns = new Set();
+    if (isIssued) {
+      // Always suppress 'date' from the table columns in Issued PDF report,
+      // as it will be shown in the header above the table as 'Receive Date' or 'Last Receive Date'
+      headerOnlyColumns.add('date');
+      if (allSameType) headerOnlyColumns.add('type');
+      if (allGrocery) headerOnlyColumns.add('for');
+      if (allSameParty || targetParty) headerOnlyColumns.add('party');
+      if (allSameEventDate) headerOnlyColumns.add('eventDate');
+      if (allSameEventType) headerOnlyColumns.add('eventType');
+    } else {
+      // Always suppress 'date' from the table columns in Return PDF report,
+      // as it will be shown in the header above the table as 'Entry Date' or 'Latest Entry Date'
+      headerOnlyColumns.add('date');
+      if (allSameReturnDate) headerOnlyColumns.add('returnDate');
+      // For Return Report: Type is ALWAYS removed from table columns (each type has its own section table with title)
+      headerOnlyColumns.add('type');
+      if (allSameParty || targetParty) headerOnlyColumns.add('party');
+      if (allSameFor) headerOnlyColumns.add('for');
+    }
+
+    // Exact order requested for Issued PDF:
+    // sNo, serial, item, availableStock, qty (issue qty), unitPrice, dishes, estimatedCost, image, remark
+    const issuedPdfOrder = [
+      'serial',
+      'item',
+      'availableStock',
+      'qty',
+      'unitPrice',
+      'dishes',
+      'estimatedCost',
+      'image'
+    ];
+
+    // Standard base order for Return PDF:
+    // sNo, serial, item, availableStock, issueQty, qty (return/remaining), damage, missing, notReturned (consumed), unitPrice, totalCost, image, remark
+    const returnPdfOrder = [
+      'serial',
+      'item',
+      'availableStock',
+      'issueQty',
+      'qty',
+      'damage',
+      'missing',
+      'notReturned',
+      'unitPrice',
+      'totalCost',
+      'image',
+      'returnDate'
     ];
 
     const getItemImage = (row) => {
@@ -1457,53 +1609,6 @@ const Inventory = () => {
       const match = items.find(i => i.id === row.itemId || i.item_name === row.itemName);
       return match?.image_url && match.image_url !== 'No Image' ? match.image_url : null;
     };
-
-    const imageUrlMap = {};
-    const body = filteredReportData.map((row, index) => {
-      const rowData = { sNo: index + 1 };
-      columnsToInclude.forEach(col => {
-        if (col.key === 'image') {
-          const itemImg = getItemImage(row);
-          imageUrlMap[index] = itemImg || '';
-          rowData[col.key] = '';
-        } else {
-          let val = row[col.key === 'type' ? 'inventoryType' : col.key === 'item' ? 'itemName' : col.key === 'party' ? 'partyName' : col.key === 'for' ? 'forType' : col.key === 'serial' ? 'serial' : col.key];
-          if (['date'].includes(col.key)) {
-            rowData[col.key] = formatDate(row.createdAt);
-          } else if (['eventDate', 'returnDate'].includes(col.key)) {
-            rowData[col.key] = formatDate(val);
-          } else if (['estimatedCost', 'totalCost'].includes(col.key)) {
-            rowData[col.key] = `Rs ${parseFloat(val || 0).toFixed(2)}`;
-          } else if (col.key === 'qty' || col.key === 'issueQty') {
-            const u = row.unit ? ` ${row.unit}` : '';
-            rowData[col.key] = val != null ? `${val}${u}` : '-';
-          } else if (col.key === 'notReturned') {
-            if (isConsumableType(row.inventoryType)) {
-              const consumedVal = row.consumed != null
-                ? Number(row.consumed)
-                : Math.max(0, Number(row.issueQty || 0) - Number(row.qty || 0));
-              const u = row.unit ? ` ${row.unit}` : '';
-              rowData[col.key] = `${consumedVal}${u} (consumed)`;
-            } else {
-              const notRetVal = (Number(row.damage || 0) + Number(row.missing || 0));
-              const u = row.unit ? ` ${row.unit}` : '';
-              rowData[col.key] = notRetVal > 0 ? `${notRetVal}${u}` : '0';
-            }
-          } else if (col.key === 'damage' || col.key === 'missing') {
-            if (isConsumableType(row.inventoryType)) {
-              rowData[col.key] = '-';
-            } else {
-              const u = row.unit && Number(val) > 0 ? ` ${row.unit}` : '';
-              rowData[col.key] = val != null ? `${val}${u}` : '-';
-            }
-          } else {
-            rowData[col.key] = val != null ? val : '-';
-          }
-        }
-      });
-      rowData['remark'] = '';
-      return rowData;
-    });
 
     setIsReportGenerating(true);
 
@@ -1516,11 +1621,15 @@ const Inventory = () => {
 
         const colWeights = {
           sNo: 0.55,
-          serial: 0.95,
+          serial: 0.85,
           type: 1.0,
-          item: 1.8,
-          issueQty: 0.75,
-          qty: 0.75,
+          item: 1.95,
+          availableStock: 0.95,
+          issueQty: 0.85,
+          qty: 0.85,
+          dishes: 1.3,
+          unitPrice: 1.1,
+          estimatedCost: 1.05,
           image: 0.8,
           date: 1.35,
           for: 0.55,
@@ -1528,36 +1637,12 @@ const Inventory = () => {
           eventDate: 1.35,
           eventType: 1.0,
           returnDate: 1.35,
-          damage: 0.9,
-          missing: 0.9,
-          notReturned: 1.2,
-          estimatedCost: 1.35,
-          totalCost: 1.35,
-          dishes: 1.3,
-          remark: 0.8
+          damage: 0.85,
+          missing: 0.85,
+          notReturned: 1.15,
+          totalCost: 1.25,
+          remark: 1.4
         };
-
-        const hasImage = reportColumns.some(c => c.dataKey === 'image');
-        const nonImageWidth = hasImage ? availableWidth - 8.5 : availableWidth;
-        const nonImageTotalWeight = reportColumns
-          .filter(c => c.dataKey !== 'image')
-          .reduce((sum, col) => sum + (colWeights[col.dataKey] || 1.0), 0);
-
-        const colStyles = {};
-        reportColumns.forEach(col => {
-          if (col.dataKey === 'image') {
-            colStyles[col.dataKey] = {
-              cellWidth: 8.5,
-              halign: 'center'
-            };
-          } else {
-            const weight = colWeights[col.dataKey] || 1.0;
-            colStyles[col.dataKey] = {
-              cellWidth: (nonImageWidth / nonImageTotalWeight) * weight,
-              halign: ['item', 'party', 'dishes'].includes(col.dataKey) ? 'left' : 'center'
-            };
-          }
-        });
 
         let imageMap = {};
         if (visibleColumns.image) {
@@ -1566,152 +1651,408 @@ const Inventory = () => {
           imageMap = await loadImagesBatched(displayUrls, 12);
         }
 
-        const totalCostSum = filteredReportData.reduce((sum, row) => sum + (parseFloat(row.totalCost) || 0), 0);
-        const totalEstimatedCostSum = filteredReportData.reduce((sum, row) => sum + (parseFloat(row.estimatedCost) || 0), 0);
-        const totalIssueQtySum = filteredReportData.reduce((sum, row) => sum + (Number(isIssued ? row.qty : row.issueQty) || 0), 0);
-        const totalReturnQtySum = filteredReportData.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-        const totalDamageSum = filteredReportData.reduce((sum, row) => sum + (Number(row.damage) || 0), 0);
-        const totalMissingSum = filteredReportData.reduce((sum, row) => sum + (Number(row.missing) || 0), 0);
-        const totalNotReturnedSum = filteredReportData.reduce((sum, row) => sum + (Number(row.damage || 0) + Number(row.missing || 0)), 0);
-
         const formatQtySum = (sum) => {
           if (sum == null || isNaN(sum)) return '-';
           const rounded = Math.round(Number(sum) * 100) / 100;
           return rounded !== 0 ? String(rounded) : '0';
         };
 
-        const footRow = {};
-        reportColumns.forEach(col => {
-          if (col.dataKey === 'sNo') {
-            footRow[col.dataKey] = 'Total';
-          } else if (col.dataKey === 'totalCost') {
-            footRow[col.dataKey] = `Rs ${totalCostSum.toFixed(2)}`;
-          } else if (col.dataKey === 'estimatedCost') {
-            footRow[col.dataKey] = `Rs ${totalEstimatedCostSum.toFixed(2)}`;
-          } else if (col.dataKey === 'issueQty') {
-            footRow[col.dataKey] = formatQtySum(totalIssueQtySum);
-          } else if (col.dataKey === 'qty') {
-            footRow[col.dataKey] = formatQtySum(isIssued ? totalIssueQtySum : totalReturnQtySum);
-          } else if (col.dataKey === 'damage') {
-            footRow[col.dataKey] = formatQtySum(totalDamageSum);
-          } else if (col.dataKey === 'missing') {
-            footRow[col.dataKey] = formatQtySum(totalMissingSum);
-          } else if (col.dataKey === 'notReturned') {
-            footRow[col.dataKey] = formatQtySum(totalNotReturnedSum);
-          } else {
-            footRow[col.dataKey] = '';
-          }
+        // Group rows by Inventory Type (e.g. Grocery, Crockery, Glass, Decor, etc.)
+        const typeGroups = {};
+        filteredReportData.forEach(row => {
+          const typeKey = String(row.inventoryType || 'Other').trim();
+          if (!typeGroups[typeKey]) typeGroups[typeKey] = [];
+          typeGroups[typeKey].push(row);
         });
 
-        const title = `${isIssued ? 'ISSUED' : 'RETURN'} HISTORY REPORT`;
-        const countText = `(${body.length})`;
-        doc.setFontSize(13);
-        doc.setTextColor(124, 58, 237);
-        doc.text(title, pageMargin, 9);
+        const distinctTypes = Object.keys(typeGroups);
 
-        const titleWidth = doc.getTextWidth(title);
-        doc.setFontSize(8.5);
-        doc.setTextColor(150, 150, 150);
-        doc.text(countText, pageMargin + titleWidth + 2, 9);
+        for (let tIdx = 0; tIdx < distinctTypes.length; tIdx++) {
+          const currentType = distinctTypes[tIdx];
+          const typeRows = typeGroups[currentType];
+          const isTypeGrocery = isGroceryRow({ inventoryType: currentType }) || isConsumableType(currentType);
+          const allSameTypeReturnDate = typeRows.every(r => formatDate(r.returnDate) === formatDate(typeRows[0]?.returnDate));
 
-        doc.setFontSize(6.5);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - pageMargin, 9, { align: 'right' });
+          // Build tailored per-type columns
+          const typeColumnsToInclude = isIssued
+            ? issuedPdfOrder
+                .filter(k => visibleColumns[k] !== false && !headerOnlyColumns.has(k))
+                .map(k => columnConfig.find(c => c.key === k) || { key: k, label: k })
+            : returnPdfOrder
+                .filter(k => {
+                  if (visibleColumns[k] === false) return false;
+                  // 1. Remove 'type' in Return Report (header already has type)
+                  if (k === 'type') return false;
+                  // 2. Remove 'date' (Entry Date) in Return Report (shown above table)
+                  if (k === 'date') return false;
+                  // 3. For Grocery / consumables, remove 'for', 'damage', and 'missing'
+                  if (isTypeGrocery && ['for', 'damage', 'missing'].includes(k)) return false;
+                  // 4. If returnDate is shown above table for this type or in headerOnlyColumns, remove it
+                  if (k === 'returnDate' && (allSameReturnDate || allSameTypeReturnDate)) return false;
+                  // 5. Remove columns that are already shown in the top header
+                  if (headerOnlyColumns.has(k)) return false;
+                  return true;
+                })
+                .map(k => columnConfig.find(c => c.key === k) || { key: k, label: k });
 
-        doc.setFontSize(7.5);
-        doc.setTextColor(60, 60, 60);
-        doc.setFont(undefined, 'bold');
+          const typeReportColumns = [
+            { header: 'S. No.', dataKey: 'sNo' },
+            ...typeColumnsToInclude.map(col => ({
+              header: isIssued && col.key === 'qty'
+                ? 'Issue Qty'
+                : !isIssued && col.key === 'qty' && !isTypeGrocery
+                ? 'Return Qty'
+                : !isIssued && col.key === 'notReturned' && isTypeGrocery
+                ? 'Consumed'
+                : !isIssued && col.key === 'notReturned' && !isTypeGrocery
+                ? 'Not Returned'
+                : col.label,
+              dataKey: col.key
+            })),
+            { header: 'Remark', dataKey: 'remark' }
+          ];
 
-        const dateStr = uniformInfo.date ? formatDate(uniformInfo.date) : 'Various';
-        const forStr = uniformInfo.for || 'Various';
-        const partyStr = uniformInfo.party || 'Various';
-        const eventDateStr = uniformInfo.eventDate ? formatDate(uniformInfo.eventDate) : (isIssued ? 'Various' : null);
+          const hasImage = typeReportColumns.some(c => c.dataKey === 'image');
+          const nonImageWidth = hasImage ? availableWidth - 8.5 : availableWidth;
+          const nonImageTotalWeight = typeReportColumns
+            .filter(c => c.dataKey !== 'image')
+            .reduce((sum, col) => sum + (colWeights[col.dataKey] || 1.0), 0);
 
-        const row1 = `Date: ${dateStr}    For: ${forStr}`;
-        const row2 = `Party: ${partyStr}${eventDateStr ? `    Event-Date: ${eventDateStr}` : ''}`;
-        doc.text(row1, pageMargin, 15);
-        doc.text(row2, pageMargin, 19.5);
-        const currentY = 24;
+          const typeColStyles = {};
+          typeReportColumns.forEach(col => {
+            if (col.dataKey === 'image') {
+              typeColStyles[col.dataKey] = {
+                cellWidth: 8.5,
+                halign: 'center'
+              };
+            } else {
+              const weight = colWeights[col.dataKey] || 1.0;
+              typeColStyles[col.dataKey] = {
+                cellWidth: (nonImageWidth / nonImageTotalWeight) * weight,
+                halign: ['item', 'party', 'dishes'].includes(col.dataKey) ? 'left' : 'center'
+              };
+            }
+          });
 
-        // Yield slightly so UI updates
-        await new Promise(r => setTimeout(r, 20));
+          // Determine vertical start position for this type's section
+          let headerTopY = 9;
+          let isNewPageForType = false;
 
-        autoTable(doc, {
-          startY: currentY,
-          columns: reportColumns,
-          body: body,
-          foot: [footRow],
-          theme: 'grid',
-          columnStyles: colStyles,
-          headStyles: {
-            fillColor: [109, 40, 217],
-            textColor: 255,
-            fontSize: 7.0,
-            fontStyle: 'bold',
-            halign: 'center',
-            valign: 'middle',
-            cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 },
-            overflow: 'linebreak'
-          },
-          footStyles: {
-            fillColor: [237, 233, 254],
-            textColor: [88, 28, 135],
-            fontSize: 7.5,
-            fontStyle: 'bold',
-            halign: 'center',
-            valign: 'middle',
-            cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 }
-          },
-          styles: {
-            fontSize: 7.5,
-            cellPadding: { top: 0.9, bottom: 0.9, left: 0.4, right: 0.4 },
-            halign: 'center',
-            valign: 'middle',
-            overflow: 'linebreak',
-            minCellHeight: 5.2
-          },
-          alternateRowStyles: { fillColor: [249, 250, 251] },
-          margin: { top: 12, right: pageMargin, bottom: 14, left: pageMargin },
-          willDrawCell: (data) => {
-            if (data.column.dataKey === 'image' && data.cell.section === 'body') data.cell.text = [];
-          },
-          didDrawCell: (data) => {
-            if (data.column.dataKey === 'image' && data.cell.section === 'body') {
-              const url = imageUrlMap[data.row.index];
-              if (url) {
-                const dispUrl = getDisplayableImageUrl(url);
-                const b64 = imageMap[dispUrl] || imageMap[url];
-                if (b64) {
-                  const imgSize = Math.min(data.cell.width - 1, data.cell.height - 1, 4.8);
-                  const x = data.cell.x + (data.cell.width - imgSize) / 2;
-                  const y = data.cell.y + (data.cell.height - imgSize) / 2;
-                  try {
-                    doc.addImage(b64, 'JPEG', x, y, imgSize, imgSize);
-                  } catch {
-                    try { doc.addImage(b64, x, y, imgSize, imgSize); } catch { /* ignore */ }
+          if (tIdx === 0) {
+            headerTopY = 9;
+            isNewPageForType = true;
+          } else {
+            const lastBottomY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 0;
+            // Check remaining vertical space on the current page.
+            // Spacing gap (7mm) + section header (title + 2 metadata rows ~14mm) + table header & 1 row (~14mm) = ~35mm
+            // Usable height limit on page is doc.internal.pageSize.height - 18mm (~279mm)
+            const remainingSpace = doc.internal.pageSize.height - 18 - lastBottomY;
+            if (remainingSpace < 35) {
+              doc.addPage();
+              headerTopY = 9;
+              isNewPageForType = true;
+            } else {
+              headerTopY = lastBottomY + 7;
+              isNewPageForType = false;
+            }
+          }
+
+          const typeImageUrlMap = {};
+          const typeLateEntryRows = new Set();
+          const body = typeRows.map((row, index) => {
+            const rowData = { sNo: index + 1 };
+            typeColumnsToInclude.forEach(col => {
+              if (col.key === 'image') {
+                const itemImg = getItemImage(row);
+                typeImageUrlMap[index] = itemImg || '';
+                rowData[col.key] = '';
+              } else {
+                let val = row[col.key === 'type' ? 'inventoryType' : col.key === 'item' ? 'itemName' : col.key === 'party' ? 'partyName' : col.key === 'for' ? 'forType' : col.key === 'serial' ? 'serial' : col.key];
+                if (['date'].includes(col.key)) {
+                  const late = isIssued && isLateEntry(row);
+                  if (late) typeLateEntryRows.add(index);
+                  rowData[col.key] = late ? `${formatDate(row.createdAt)}\nLate Entry` : formatDate(row.createdAt);
+                } else if (col.key === 'for' && (isIssued || isTypeGrocery) && isGroceryRow(row)) {
+                  rowData[col.key] = '-';
+                } else if (['eventDate', 'returnDate'].includes(col.key)) {
+                  rowData[col.key] = formatDate(val);
+                } else if (['estimatedCost', 'totalCost'].includes(col.key)) {
+                  rowData[col.key] = `Rs ${parseFloat(val || 0).toFixed(2)}`;
+                } else if (col.key === 'unitPrice') {
+                  rowData[col.key] = Number(val) > 0 ? `Rs ${Number(val).toFixed(2)}${row.unit ? ` / ${row.unit}` : ''}` : '-';
+                } else if (col.key === 'qty' || col.key === 'issueQty') {
+                  const u = row.unit ? ` ${row.unit}` : '';
+                  rowData[col.key] = val != null ? `${val}${u}` : '-';
+                } else if (col.key === 'availableStock') {
+                  const stockQty = getItemAvailableStock(row);
+                  const u = row.unit ? ` ${row.unit}` : '';
+                  rowData[col.key] = `${stockQty}${u}`;
+                } else if (col.key === 'notReturned') {
+                  if (isConsumableType(row.inventoryType)) {
+                    const consumedVal = row.consumed != null
+                      ? Number(row.consumed)
+                      : Math.max(0, Number(row.issueQty || 0) - Number(row.qty || 0));
+                    const u = row.unit ? ` ${row.unit}` : '';
+                    rowData[col.key] = `${consumedVal}${u}`;
+                  } else {
+                    const notRetVal = (Number(row.damage || 0) + Number(row.missing || 0));
+                    const u = row.unit ? ` ${row.unit}` : '';
+                    rowData[col.key] = notRetVal > 0 ? `${notRetVal}${u}` : '0';
+                  }
+                } else if (col.key === 'damage' || col.key === 'missing') {
+                  if (isConsumableType(row.inventoryType)) {
+                    rowData[col.key] = '-';
+                  } else {
+                    const u = row.unit && Number(val) > 0 ? ` ${row.unit}` : '';
+                    rowData[col.key] = val != null ? `${val}${u}` : '-';
+                  }
+                } else {
+                  rowData[col.key] = val != null ? val : '-';
+                }
+              }
+            });
+            rowData['remark'] = '';
+            return rowData;
+          });
+
+          const typeCostSum = typeRows.reduce((sum, row) => sum + (parseFloat(row.totalCost) || 0), 0);
+          const typeEstimatedCostSum = typeRows.reduce((sum, row) => sum + (parseFloat(row.estimatedCost) || 0), 0);
+          const typeIssueQtySum = typeRows.reduce((sum, row) => sum + (Number(isIssued ? row.qty : row.issueQty) || 0), 0);
+          const typeReturnQtySum = typeRows.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+          const typeDamageSum = typeRows.reduce((sum, row) => sum + (Number(row.damage) || 0), 0);
+          const typeMissingSum = typeRows.reduce((sum, row) => sum + (Number(row.missing) || 0), 0);
+          const typeNotReturnedSum = typeRows.reduce((sum, row) => sum + (Number(row.damage || 0) + Number(row.missing || 0)), 0);
+          const allSameUnitInType = typeRows.every(row => row.unit === typeRows[0]?.unit);
+          const commonUnitInType = typeRows[0]?.unit || '';
+
+          const footRow = {};
+          typeReportColumns.forEach(col => {
+            if (col.dataKey === 'sNo') {
+              footRow[col.dataKey] = 'Total';
+            } else if (col.dataKey === 'totalCost') {
+              footRow[col.dataKey] = `Rs ${typeCostSum.toFixed(2)}`;
+            } else if (col.dataKey === 'estimatedCost') {
+              footRow[col.dataKey] = `Rs ${typeEstimatedCostSum.toFixed(2)}`;
+            } else if (col.dataKey === 'issueQty') {
+              footRow[col.dataKey] = formatQtySum(typeIssueQtySum) + (allSameUnitInType ? ` ${commonUnitInType}` : '');
+            } else if (col.dataKey === 'qty') {
+              footRow[col.dataKey] = formatQtySum(isIssued ? typeIssueQtySum : typeReturnQtySum) + (allSameUnitInType ? ` ${commonUnitInType}` : '');
+            } else if (col.dataKey === 'damage') {
+              footRow[col.dataKey] = formatQtySum(typeDamageSum);
+            } else if (col.dataKey === 'missing') {
+              footRow[col.dataKey] = formatQtySum(typeMissingSum);
+            } else if (col.dataKey === 'notReturned') {
+              if (isTypeGrocery) {
+                const typeConsumedSum = typeRows.reduce((sum, row) => {
+                  const c = row.consumed != null
+                    ? Number(row.consumed)
+                    : Math.max(0, Number(row.issueQty || 0) - Number(row.qty || 0));
+                  return sum + (isNaN(c) ? 0 : c);
+                }, 0);
+                footRow[col.dataKey] = formatQtySum(typeConsumedSum) + (allSameUnitInType ? ` ${commonUnitInType}` : '');
+              } else {
+                footRow[col.dataKey] = formatQtySum(typeNotReturnedSum);
+              }
+            } else {
+              footRow[col.dataKey] = '';
+            }
+          });
+
+          // Header for this type
+          const title = `${isIssued ? 'ISSUED' : 'RETURN'} HISTORY REPORT - ${currentType}`;
+          const countText = `(${body.length})`;
+          doc.setFontSize(13);
+          doc.setTextColor(124, 58, 237);
+          doc.setFont(undefined, 'bold');
+          doc.text(title, pageMargin, headerTopY);
+
+          const titleWidth = doc.getTextWidth(title);
+          doc.setFontSize(8.5);
+          doc.setTextColor(150, 150, 150);
+          doc.setFont(undefined, 'normal');
+          doc.text(countText, pageMargin + titleWidth + 2, headerTopY);
+
+          if (isNewPageForType) {
+            doc.setFontSize(6.5);
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - pageMargin, headerTopY, { align: 'right' });
+          }
+
+          doc.setFontSize(7.5);
+          doc.setTextColor(60, 60, 60);
+          doc.setFont(undefined, 'bold');
+
+          const dateStr = uniformInfo.date ? formatDate(uniformInfo.date) : 'Various';
+          const forStr = uniformInfo.for || 'Various';
+          const partyStr = uniformInfo.party || 'Various';
+          const eventDateStr = uniformInfo.eventDate ? formatDate(uniformInfo.eventDate) : (isIssued ? 'Various' : null);
+
+          const row1Y = headerTopY + 5.5;
+          const row2Y = headerTopY + 9.8;
+          const currentY = headerTopY + 14;
+
+          if (isIssued) {
+            // Compute latest / last receive date among rows for this type
+            const sortedByReceiveDate = [...typeRows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            const latestReceiveDateRaw = sortedByReceiveDate[0]?.createdAt;
+            const latestReceiveDateStr = latestReceiveDateRaw ? formatDate(latestReceiveDateRaw) : null;
+            const allSameTypeDate = typeRows.every(r => formatDate(r.createdAt) === formatDate(typeRows[0]?.createdAt));
+            const hasAnyLateReceiveInType = typeRows.some(isLateEntry);
+
+            const receiveLabel = allSameTypeDate ? 'Receive Date' : 'Last Receive Date';
+            const receiveVal = allSameTypeDate ? (latestReceiveDateStr || dateStr) : latestReceiveDateStr;
+
+            const row1Parts = [];
+            if (!isTypeGrocery && forStr) {
+              row1Parts.push(`For: ${forStr}`);
+            }
+            if (receiveVal) {
+              row1Parts.push(`${receiveLabel}: ${receiveVal}`);
+            }
+            const row1 = row1Parts.join('    ');
+            if (row1) {
+              doc.text(row1, pageMargin, row1Y);
+            }
+
+            if (hasAnyLateReceiveInType && receiveVal) {
+              const row1Width = doc.getTextWidth(row1);
+              doc.setTextColor(220, 38, 38);
+              doc.text('(Late Entry)', pageMargin + row1Width + 2, row1Y);
+              doc.setTextColor(60, 60, 60);
+            }
+          } else {
+            // Compute latest entry date among rows for this type
+            const sortedByEntryDate = [...typeRows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            const latestEntryDateRaw = sortedByEntryDate[0]?.createdAt;
+            const latestEntryDateStr = latestEntryDateRaw ? formatDate(latestEntryDateRaw) : null;
+            const allSameTypeDate = typeRows.every(r => formatDate(r.createdAt) === formatDate(typeRows[0]?.createdAt));
+
+            const entryLabel = allSameTypeDate ? 'Entry Date' : 'Latest Entry Date';
+            const entryVal = allSameTypeDate ? (latestEntryDateStr || dateStr) : latestEntryDateStr;
+
+            const sortedByReturnDate = [...typeRows].sort((a, b) => new Date(b.returnDate) - new Date(a.returnDate));
+            const latestReturnDateStr = sortedByReturnDate[0]?.returnDate ? formatDate(sortedByReturnDate[0].returnDate) : null;
+            const returnDateLabel = allSameTypeReturnDate ? 'Return Date' : 'Latest Return Date';
+            const returnDateVal = allSameTypeReturnDate ? (latestReturnDateStr || (uniformInfo.returnDate ? formatDate(uniformInfo.returnDate) : null)) : latestReturnDateStr;
+
+            const row1Parts = [];
+            if (entryVal) {
+              row1Parts.push(`${entryLabel}: ${entryVal}`);
+            }
+            if (returnDateVal) {
+              row1Parts.push(`${returnDateLabel}: ${returnDateVal}`);
+            }
+            if (!isTypeGrocery && forStr) {
+              row1Parts.push(`For: ${forStr}`);
+            }
+            const row1 = row1Parts.join('    ');
+            if (row1) {
+              doc.text(row1, pageMargin, row1Y);
+            }
+          }
+
+          const eventTypeStr = isIssued && (allSameEventType || typeRows[0]?.eventType) ? `    Event Type: ${typeRows[0]?.eventType || commonEventType}` : '';
+          const row2 = `Party: ${partyStr}${eventDateStr ? `    Event-Date: ${eventDateStr}` : ''}${eventTypeStr}`;
+          doc.text(row2, pageMargin, row2Y);
+
+          // Yield slightly so UI updates
+          await new Promise(r => setTimeout(r, 20));
+
+          autoTable(doc, {
+            startY: currentY,
+            columns: typeReportColumns,
+            body: body,
+            foot: [footRow],
+            showFoot: 'lastPage',
+            theme: 'grid',
+            columnStyles: typeColStyles,
+            headStyles: {
+              fillColor: [109, 40, 217],
+              textColor: 255,
+              fontSize: 7.0,
+              fontStyle: 'bold',
+              halign: 'center',
+              valign: 'middle',
+              cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 },
+              overflow: 'linebreak'
+            },
+            footStyles: {
+              fillColor: [237, 233, 254],
+              textColor: [88, 28, 135],
+              fontSize: 7.5,
+              fontStyle: 'bold',
+              halign: 'center',
+              valign: 'middle',
+              cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 }
+            },
+            styles: {
+              fontSize: 7.5,
+              cellPadding: { top: 0.9, bottom: 0.9, left: 0.4, right: 0.4 },
+              halign: 'center',
+              valign: 'middle',
+              overflow: 'linebreak',
+              minCellHeight: 5.2
+            },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            margin: { top: 12, right: pageMargin, bottom: 14, left: pageMargin },
+            didParseCell: (data) => {
+              if (data.section === 'body' && data.column.dataKey === 'date' && typeLateEntryRows.has(data.row.index)) {
+                data.cell.styles.textColor = [220, 38, 38];
+                data.cell.styles.fontStyle = 'bold';
+              }
+            },
+            willDrawCell: (data) => {
+              if (data.column.dataKey === 'image' && data.cell.section === 'body') data.cell.text = [];
+            },
+            didDrawCell: (data) => {
+              if (data.column.dataKey === 'image' && data.cell.section === 'body') {
+                const url = typeImageUrlMap[data.row.index];
+                if (url) {
+                  const dispUrl = getDisplayableImageUrl(url);
+                  const b64 = imageMap[dispUrl] || imageMap[url];
+                  if (b64) {
+                    const imgSize = Math.min(data.cell.width - 1, data.cell.height - 1, 4.8);
+                    const x = data.cell.x + (data.cell.width - imgSize) / 2;
+                    const y = data.cell.y + (data.cell.height - imgSize) / 2;
+                    try {
+                      doc.addImage(b64, 'JPEG', x, y, imgSize, imgSize);
+                    } catch {
+                      try { doc.addImage(b64, x, y, imgSize, imgSize); } catch { /* ignore */ }
+                    }
                   }
                 }
               }
             }
-          },
-          didDrawPage: function () {
-            const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
-            doc.setFontSize(7.5);
-            doc.setTextColor(120);
-            doc.text(`Page ${pageNumber} of {total_pages_count_string}`, doc.internal.pageSize.width - pageMargin, doc.internal.pageSize.height - 5, { align: 'right' });
-          }
-        });
+          });
+        }
+
+        // Draw page footer numbers cleanly across all generated pages
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+          doc.setPage(p);
+          doc.setFontSize(7.5);
+          doc.setTextColor(120);
+          doc.text(
+            `Page ${p} of ${totalPages}`,
+            doc.internal.pageSize.width - pageMargin,
+            doc.internal.pageSize.height - 5,
+            { align: 'right' }
+          );
+        }
 
         if (typeof doc.putTotalPages === 'function') doc.putTotalPages('{total_pages_count_string}');
 
         let filterSuffix = '';
+        if (targetParty) {
+          filterSuffix += `_${targetParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        }
         if (isIssued) {
-          if (selectedPartyCard) filterSuffix += `_${selectedPartyCard.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          else if (issuedFilterParty) filterSuffix += `_${issuedFilterParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (!targetParty && issuedFilterParty) filterSuffix += `_${issuedFilterParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
           if (issuedFilterType) filterSuffix += `_${issuedFilterType.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (issuedFilterEventType) filterSuffix += `_${issuedFilterEventType.replace(/[^a-zA-Z0-9]/g, '_')}`;
           if (issuedFilterItem) filterSuffix += `_${issuedFilterItem.replace(/[^a-zA-Z0-9]/g, '_')}`;
         } else {
-          if (returnFilterParty) filterSuffix += `_${returnFilterParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (!targetParty && returnFilterParty) filterSuffix += `_${returnFilterParty.replace(/[^a-zA-Z0-9]/g, '_')}`;
           if (returnFilterType) filterSuffix += `_${returnFilterType.replace(/[^a-zA-Z0-9]/g, '_')}`;
           if (returnFilterItem) filterSuffix += `_${returnFilterItem.replace(/[^a-zA-Z0-9]/g, '_')}`;
         }
@@ -1723,6 +2064,7 @@ const Inventory = () => {
         showToast('Failed to generate report', 'error');
       } finally {
         setIsReportGenerating(false);
+        setGeneratingReportParty(null);
       }
     }, 50);
   };
@@ -1836,10 +2178,23 @@ const Inventory = () => {
                         <option value="">All Items</option>
                         {issuedOptions.items.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
+                      <select value={issuedFilterEventType} onChange={(e) => setIssuedFilterEventType(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }} title="Filter by Event Type">
+                        <option value="">All Events</option>
+                        {issuedOptions.eventTypes.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
                     </>
                   ) : (
                     <>
-                      <select value={returnFilterParty} onChange={(e) => setReturnFilterParty(e.target.value)} className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}>
+                      <select
+                        value={selectedPartyCard || returnFilterParty}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setReturnFilterParty(val);
+                          setSelectedPartyCard(val || null);
+                        }}
+                        className="h-8 pl-2 pr-6 bg-white border border-slate-200/60 rounded-xl text-[10px] font-bold text-slate-600 appearance-none max-w-[95px] truncate hover:border-fuchsia-200 transition-all cursor-pointer"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23d946ef' stroke-width='3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}
+                      >
                         <option value="">All Party</option>
                         {returnOptions.parties.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
@@ -1918,10 +2273,10 @@ const Inventory = () => {
                     )}
                   </div>
 
-                  {((activeTab === 'issued' ? (issuedFilterItem || issuedFilterType || issuedFilterParty || issuedStartDate || issuedEndDate) : (returnFilterItem || returnFilterType || returnFilterParty || returnStartDate || returnEndDate)) || searchTerm) && (
+                  {((activeTab === 'issued' ? (issuedFilterItem || issuedFilterType || issuedFilterEventType || issuedFilterParty || issuedStartDate || issuedEndDate) : (returnFilterItem || returnFilterType || returnFilterParty || returnStartDate || returnEndDate)) || searchTerm) && (
                     <button
                       onClick={() => {
-                        if (activeTab === 'issued') { setIssuedFilterItem(""); setIssuedFilterType(""); setIssuedFilterParty(""); setIssuedStartDate(""); setIssuedEndDate(""); }
+                        if (activeTab === 'issued') { setIssuedFilterItem(""); setIssuedFilterType(""); setIssuedFilterEventType(""); setIssuedFilterParty(""); setIssuedStartDate(""); setIssuedEndDate(""); }
                         else { setReturnFilterItem(""); setReturnFilterType(""); setReturnFilterParty(""); setReturnStartDate(""); setReturnEndDate(""); }
                         setSearchTerm("");
                       }}
@@ -1954,14 +2309,14 @@ const Inventory = () => {
             </div>
           </div>
 
-          {activeTab === 'issued' && shouldGroup && !selectedPartyCard ? (
+          {shouldGroup && !selectedPartyCard ? (
             <div className="flex-1 overflow-auto custom-scrollbar flex flex-col min-h-0">
               {isTableLoading ? (
                 <div className="py-32 text-center flex flex-col items-center justify-center gap-3">
                   <Loader2 className="h-10 w-10 animate-spin text-violet-600" />
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading Party Cards...</p>
                 </div>
-              ) : groupedIssuedData.length === 0 ? (
+              ) : (activeTab === 'issued' ? groupedIssuedData : groupedReturnData).length === 0 ? (
                 <div className="py-32 text-center text-slate-350 flex flex-col items-center justify-center">
                   <Database className="h-16 w-16 mx-auto mb-4 opacity-20 text-slate-400" />
                   <p className="text-sm font-bold uppercase tracking-widest text-slate-400">No records found</p>
@@ -1970,17 +2325,24 @@ const Inventory = () => {
                 <>
                   <div className="flex-1 overflow-auto custom-scrollbar p-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 animate-in fade-in duration-300">
-                      {groupedIssuedData
+                      {(activeTab === 'issued' ? groupedIssuedData : groupedReturnData)
                         .slice((partyGroupPage - 1) * PAGE_SIZE, partyGroupPage * PAGE_SIZE)
                         .map((group, idx) => (
                           <PartyCard
                             key={idx}
                             partyName={group.partyName}
                             eventDate={group.latestDate}
+                            dateLabel={activeTab === 'return' ? 'Return Date' : 'Event Date'}
                             totalQty={group.totalQty}
                             totalCost={group.totalCost}
                             isDownloading={generatingReportParty === group.partyName}
-                            onDownloadReport={() => handleGeneratePartyReport(group.partyName, group.rows)}
+                            onDownloadReport={() => {
+                              if (activeTab === 'issued') {
+                                handleGeneratePartyReport(group.partyName, group.rows);
+                              } else {
+                                handleGeneratePartyReturnReport(group.partyName);
+                              }
+                            }}
                             onClick={() => setSelectedPartyCard(group.partyName)}
                           />
                         ))}
@@ -1988,7 +2350,7 @@ const Inventory = () => {
                   </div>
                   <Pagination
                     currentPage={partyGroupPage}
-                    totalCount={groupedIssuedData.length}
+                    totalCount={(activeTab === 'issued' ? groupedIssuedData : groupedReturnData).length}
                     pageSize={PAGE_SIZE}
                     onPageChange={setPartyGroupPage}
                     isLoading={isTableLoading}
@@ -1998,17 +2360,25 @@ const Inventory = () => {
             </div>
           ) : (
             <div className="flex-1 flex flex-col min-h-0">
-              {activeTab === 'issued' && selectedPartyCard && (
+              {selectedPartyCard && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-4 bg-white border-b border-slate-100/80 shrink-0 animate-in slide-in-from-top-2 duration-200">
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
                         setSelectedPartyCard(null);
-                        setIssuedFilterParty("");
-                        setIssuedFilterItem("");
-                        setIssuedFilterType("");
-                        setIssuedStartDate("");
-                        setIssuedEndDate("");
+                        if (activeTab === 'issued') {
+                          setIssuedFilterParty("");
+                          setIssuedFilterItem("");
+                          setIssuedFilterType(""); setIssuedFilterEventType("");
+                          setIssuedStartDate("");
+                          setIssuedEndDate("");
+                        } else {
+                          setReturnFilterParty("");
+                          setReturnFilterItem("");
+                          setReturnFilterType("");
+                          setReturnStartDate("");
+                          setReturnEndDate("");
+                        }
                         setSearchTerm("");
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold text-violet-600 border border-slate-200/50 hover:border-slate-200 transition-all select-none"
@@ -2016,8 +2386,8 @@ const Inventory = () => {
                       <ArrowLeft className="h-3.5 w-3.5" /> Back to Parties
                     </button>
                     <button
-                      onClick={handleGenerateReport}
-                      disabled={isReportGenerating || filteredIssuedHistory.length === 0}
+                      onClick={() => handleGenerateReport()}
+                      disabled={isReportGenerating || getFilteredHistory().length === 0}
                       className="flex items-center gap-1.5 px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-100/50 hover:scale-[1.02] active:scale-95 select-none disabled:opacity-75"
                     >
                       {isReportGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Download Report
@@ -2026,37 +2396,63 @@ const Inventory = () => {
                   <span className="text-xs font-bold text-slate-500 truncate max-w-full">
                     Showing records for:{' '}
                     <strong className="text-slate-800">{selectedPartyCard}</strong>
-                    {[
-                      issuedFilterType && `Type: ${issuedFilterType}`,
-                      issuedFilterItem && `Item: ${issuedFilterItem}`,
-                      searchTerm && `"${searchTerm}"`,
-                      (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
-                    ].filter(Boolean).length > 0 && (
-                      <span className="text-slate-500 font-medium">
-                        {' '}({[
-                          issuedFilterType && `Type: ${issuedFilterType}`,
-                          issuedFilterItem && `Item: ${issuedFilterItem}`,
-                          searchTerm && `"${searchTerm}"`,
-                          (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
-                        ].filter(Boolean).join(' • ')})
-                      </span>
+                    {activeTab === 'issued' ? (
+                      [
+                        issuedFilterType && `Type: ${issuedFilterType}`, issuedFilterEventType && `Event: ${issuedFilterEventType}`,
+                        issuedFilterItem && `Item: ${issuedFilterItem}`,
+                        searchTerm && `"${searchTerm}"`,
+                        (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
+                      ].filter(Boolean).length > 0 && (
+                        <span className="text-slate-500 font-medium">
+                          {' '}({[
+                            issuedFilterType && `Type: ${issuedFilterType}`, issuedFilterEventType && `Event: ${issuedFilterEventType}`,
+                            issuedFilterItem && `Item: ${issuedFilterItem}`,
+                            searchTerm && `"${searchTerm}"`,
+                            (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
+                          ].filter(Boolean).join(' • ')})
+                        </span>
+                      )
+                    ) : (
+                      [
+                        returnFilterType && `Type: ${returnFilterType}`,
+                        returnFilterItem && `Item: ${returnFilterItem}`,
+                        searchTerm && `"${searchTerm}"`,
+                        (returnStartDate || returnEndDate) && `${returnStartDate || '...'} to ${returnEndDate || '...'}`
+                      ].filter(Boolean).length > 0 && (
+                        <span className="text-slate-500 font-medium">
+                          {' '}({[
+                            returnFilterType && `Type: ${returnFilterType}`,
+                            returnFilterItem && `Item: ${returnFilterItem}`,
+                            searchTerm && `"${searchTerm}"`,
+                            (returnStartDate || returnEndDate) && `${returnStartDate || '...'} to ${returnEndDate || '...'}`
+                          ].filter(Boolean).join(' • ')})
+                        </span>
+                      )
                     )}
-                    <span className="ml-2 text-violet-600 font-extrabold">({filteredIssuedHistory.length} {filteredIssuedHistory.length === 1 ? 'record' : 'records'})</span>
+                    <span className="ml-2 text-violet-600 font-extrabold">({getFilteredHistory().length} {getFilteredHistory().length === 1 ? 'record' : 'records'})</span>
                   </span>
                 </div>
               )}
 
-              {activeTab === 'issued' && !shouldGroup && !selectedPartyCard && (
+              {!shouldGroup && !selectedPartyCard && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-4 bg-white border-b border-slate-100/80 shrink-0 animate-in slide-in-from-top-2 duration-200">
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
                         setSelectedPartyCard(null);
-                        setIssuedFilterItem("");
-                        setIssuedFilterType("");
-                        setIssuedFilterParty("");
-                        setIssuedStartDate("");
-                        setIssuedEndDate("");
+                        if (activeTab === 'issued') {
+                          setIssuedFilterItem("");
+                          setIssuedFilterType(""); setIssuedFilterEventType("");
+                          setIssuedFilterParty("");
+                          setIssuedStartDate("");
+                          setIssuedEndDate("");
+                        } else {
+                          setReturnFilterItem("");
+                          setReturnFilterType("");
+                          setReturnFilterParty("");
+                          setReturnStartDate("");
+                          setReturnEndDate("");
+                        }
                         setSearchTerm("");
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold text-violet-600 border border-slate-200/50 hover:border-slate-200 transition-all select-none"
@@ -2064,8 +2460,8 @@ const Inventory = () => {
                       <ArrowLeft className="h-3.5 w-3.5" /> Back to Parties
                     </button>
                     <button
-                      onClick={handleGenerateReport}
-                      disabled={isReportGenerating || filteredIssuedHistory.length === 0}
+                      onClick={() => handleGenerateReport()}
+                      disabled={isReportGenerating || getFilteredHistory().length === 0}
                       className="flex items-center gap-1.5 px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-100/50 hover:scale-[1.02] active:scale-95 select-none disabled:opacity-75"
                     >
                       {isReportGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Download Report
@@ -2074,15 +2470,25 @@ const Inventory = () => {
                   <span className="text-xs font-bold text-slate-500 truncate max-w-full">
                     Showing records for:{' '}
                     <strong className="text-slate-800">
-                      {[
-                        issuedFilterParty && `Party: ${issuedFilterParty}`,
-                        issuedFilterType && `Type: ${issuedFilterType}`,
-                        issuedFilterItem && `Item: ${issuedFilterItem}`,
-                        searchTerm && `"${searchTerm}"`,
-                        (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
-                      ].filter(Boolean).join(' • ') || 'All Filtered Records'}
+                      {activeTab === 'issued' ? (
+                        [
+                          issuedFilterParty && `Party: ${issuedFilterParty}`,
+                          issuedFilterType && `Type: ${issuedFilterType}`, issuedFilterEventType && `Event: ${issuedFilterEventType}`,
+                          issuedFilterItem && `Item: ${issuedFilterItem}`,
+                          searchTerm && `"${searchTerm}"`,
+                          (issuedStartDate || issuedEndDate) && `${issuedStartDate || '...'} to ${issuedEndDate || '...'}`
+                        ].filter(Boolean).join(' • ') || 'All Filtered Records'
+                      ) : (
+                        [
+                          returnFilterParty && `Party: ${returnFilterParty}`,
+                          returnFilterType && `Type: ${returnFilterType}`,
+                          returnFilterItem && `Item: ${returnFilterItem}`,
+                          searchTerm && `"${searchTerm}"`,
+                          (returnStartDate || returnEndDate) && `${returnStartDate || '...'} to ${returnEndDate || '...'}`
+                        ].filter(Boolean).join(' • ') || 'All Filtered Records'
+                      )}
                     </strong>
-                    <span className="ml-2 text-violet-600 font-extrabold">({filteredIssuedHistory.length} {filteredIssuedHistory.length === 1 ? 'record' : 'records'})</span>
+                    <span className="ml-2 text-violet-600 font-extrabold">({getFilteredHistory().length} {getFilteredHistory().length === 1 ? 'record' : 'records'})</span>
                   </span>
                 </div>
               )}
@@ -2103,99 +2509,20 @@ const Inventory = () => {
                           }
                         />
                       </th>
-                      {columnConfig.map(col => visibleColumns[col.key] !== false && (
+                      {activeColumnConfig.map(col => visibleColumns[col.key] !== false && (
                         <th key={col.key} className={`px-6 py-4 text-[10px] font-bold text-violet-600 uppercase tracking-[0.15em] bg-violet-50 border-b border-violet-100 text-center ${['date', 'eventDate', 'returnDate'].includes(col.key) ? 'min-w-[120px]' : ''}`}>{col.label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {isTableLoading ? (
-                      <tr><td colSpan={columnConfig.length + 1} className="py-20 text-center"><div className="flex flex-col items-center gap-3"><Loader2 className="h-10 w-10 animate-spin text-violet-200" /><p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Loading Records...</p></div></td></tr>
+                      <tr><td colSpan={activeColumnConfig.length + 1} className="py-20 text-center"><div className="flex flex-col items-center gap-3"><Loader2 className="h-10 w-10 animate-spin text-violet-200" /><p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Loading Records...</p></div></td></tr>
                     ) : getFilteredHistory().length === 0 ? (
-                      <tr><td colSpan={columnConfig.length + 1} className="py-32 text-center text-slate-300"><Database className="h-12 w-12 mx-auto mb-4 opacity-10" /><p className="text-xs font-bold uppercase tracking-widest">No history found</p></td></tr>
-                    ) : (activeTab === 'issued' && selectedPartyCard) ? (
-                      (() => {
-                        const displayRows = filteredIssuedHistory;
-                        const paginatedPartyDetailRows = displayRows.slice((partyDetailPage - 1) * PAGE_SIZE, partyDetailPage * PAGE_SIZE);
-                        return paginatedPartyDetailRows.map((row) => {
-                          const isSelected = selectedIds.has(row.id);
-                          const currentData = editDataMap[row.id] || row;
-
-                          return (
-                            <tr key={row.id} className={`transition-all font-sans border-b border-slate-50 last:border-0 ${isSelected ? 'bg-violet-50/50' : 'hover:bg-slate-50/50'}`}>
-                              <td className="px-4 py-3 text-center">
-                                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelection(row)} />
-                              </td>
-                              {columnConfig.map(col => visibleColumns[col.key] !== false && (
-                                <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
-                                  {col.key === 'qty' ? (
-                                    isSelected ? (
-                                      <div className="flex items-center justify-center gap-1">
-                                        <input type="number" step="any" min="0" value={currentData.qty} onChange={(e) => handleInlineEdit(row.id, 'qty', e.target.value)} className="w-16 px-1.5 py-1 bg-white border border-violet-200 rounded text-center text-xs font-bold text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20" />
-                                        {currentData.unit && <span className="text-[10px] font-bold text-slate-400 uppercase">{currentData.unit}</span>}
-                                      </div>
-                                    ) : (
-                                      <span className="font-bold text-slate-700">
-                                        {currentData.qty != null ? currentData.qty : '-'}
-                                        {currentData.unit && <span className="ml-1 text-[10px] font-semibold text-slate-400 uppercase">{currentData.unit}</span>}
-                                      </span>
-                                    )
-                                  ) : col.key === 'date' ? (
-                                    <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData.createdAt)}</span>
-                                  ) : col.key === 'eventDate' ? (
-                                    <span className="text-slate-400 whitespace-nowrap">{formatDate(currentData.eventDate)}</span>
-                                  ) : col.key === 'item' ? (
-                                    <span className="font-bold text-slate-800">{currentData.itemName}</span>
-                                  ) : col.key === 'type' ? (
-                                    currentData.inventoryType || '-'
-                                  ) : col.key === 'party' ? (
-                                    currentData.partyName || '-'
-                                  ) : col.key === 'for' ? (
-                                    currentData.forType || '-'
-                                  ) : col.key === 'eventType' ? (
-                                    currentData.eventType || '-'
-                                  ) : col.key === 'dishes' ? (
-                                    currentData.dishes || '-'
-                                  ) : col.key === 'estimatedCost' ? (
-                                    <span className="font-bold text-emerald-600">₹{parseFloat(currentData.estimatedCost || 0).toFixed(2)}</span>
-                                  ) : col.key === 'actions' ? (
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      <button
-                                        onClick={() => activeTab === 'issued' ? handleEditIssue(currentData) : handleEditReturn(currentData)}
-                                        className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
-                                        title="Edit Record"
-                                      >
-                                        <Pencil className="h-4 w-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteSingleRecord(currentData)}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                        title="Delete Record"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
-                                    </div>
-                                  ) : col.key === 'image' ? (
-                                    currentData.imageUrl && currentData.imageUrl !== 'No Image' ? (
-                                      <div className="relative flex justify-center group/img">
-                                        <a href={currentData.imageUrl} target="_blank" rel="noopener noreferrer" className="h-10 w-10 rounded-lg overflow-hidden border border-slate-100 flex items-center justify-center bg-slate-50 group-hover:scale-110 transition-transform">
-                                          <img src={getDisplayableImageUrl(currentData.imageUrl)} alt="Item" className="h-full w-full object-cover" />
-                                        </a>
-                                      </div>
-                                    ) : <EyeOff className="h-4 w-4 opacity-10 mx-auto text-slate-200" />
-                                  ) : currentData[col.key] || '-'}
-                                </td>
-                              ))}
-                            </tr>
-                          );
-                        });
-                      })()
-                    ) : shouldGroup ? (
-                      <tr><td colSpan={columnConfig.length + 1} className="py-20 text-center"><p className="text-xs font-bold uppercase tracking-widest text-slate-350">Choose a party card above</p></td></tr>
+                      <tr><td colSpan={activeColumnConfig.length + 1} className="py-32 text-center text-slate-300"><Database className="h-12 w-12 mx-auto mb-4 opacity-10" /><p className="text-xs font-bold uppercase tracking-widest">No history found</p></td></tr>
                     ) : (
                       (() => {
                         const currentFiltered = getFilteredHistory();
-                        const activeCurrentPage = activeTab === 'issued' ? issuePage : returnPage;
+                        const activeCurrentPage = selectedPartyCard ? partyDetailPage : (activeTab === 'issued' ? issuePage : returnPage);
                         const paginatedRows = currentFiltered.slice((activeCurrentPage - 1) * PAGE_SIZE, activeCurrentPage * PAGE_SIZE);
                         return paginatedRows.map((row) => {
                           const isSelected = selectedIds.has(row.id);
@@ -2206,7 +2533,7 @@ const Inventory = () => {
                               <td className="px-4 py-3 text-center">
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelection(row)} />
                               </td>
-                              {columnConfig.map(col => visibleColumns[col.key] !== false && (
+                              {activeColumnConfig.map(col => visibleColumns[col.key] !== false && (
                                 <td key={col.key} className="px-4 py-3 text-xs font-semibold text-slate-600 text-center">
                                   {isSelected && col.key === 'qty' ? (
                                     <div className="flex items-center justify-center gap-1">
@@ -2274,6 +2601,11 @@ const Inventory = () => {
                                       {currentData.qty != null ? currentData.qty : '-'}
                                       {currentData.unit && <span className="ml-1 text-[10px] font-semibold text-slate-400 uppercase">{currentData.unit}</span>}
                                     </span>
+                                  ) : col.key === 'availableStock' ? (
+                                    <span className="font-bold text-slate-800 whitespace-nowrap">
+                                      {getItemAvailableStock(currentData)}
+                                      {currentData.unit && <span className="ml-1 text-[10px] font-semibold text-slate-400 uppercase">{currentData.unit}</span>}
+                                    </span>
                                   ) : col.key === 'notReturned' ? (
                                     (() => {
                                       if (isConsumableType(currentData.inventoryType)) {
@@ -2301,6 +2633,13 @@ const Inventory = () => {
                                     currentData.partyName || '-'
                                   ) : col.key === 'for' ? (
                                     currentData.forType || '-'
+                                  ) : col.key === 'unitPrice' ? (
+                                    Number(currentData.unitPrice) > 0 ? (
+                                      <span className="font-bold text-slate-700 whitespace-nowrap">
+                                        ₹{Number(currentData.unitPrice).toFixed(2)}
+                                        {currentData.unit && <span className="ml-0.5 text-[10px] font-semibold text-slate-400 uppercase">/{currentData.unit}</span>}
+                                      </span>
+                                    ) : '-'
                                   ) : col.key === 'estimatedCost' ? (
                                     <span className="font-bold text-emerald-600">₹{parseFloat(currentData.estimatedCost || 0).toFixed(2)}</span>
                                   ) : col.key === 'totalCost' ? (
@@ -2325,10 +2664,10 @@ const Inventory = () => {
                 </table>
               </div>
 
-              {activeTab === 'issued' && selectedPartyCard ? (
+              {selectedPartyCard ? (
                 <Pagination
                   currentPage={partyDetailPage}
-                  totalCount={filteredIssuedHistory.length}
+                  totalCount={getFilteredHistory().length}
                   pageSize={PAGE_SIZE}
                   onPageChange={setPartyDetailPage}
                   isLoading={isTableLoading}
