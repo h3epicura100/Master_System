@@ -446,70 +446,14 @@ export default function Stock() {
         return;
       }
 
-      const columnsToInclude = columnConfig.filter(col => visibleColumns[col.key] !== false);
-
-      const reportColumns = [
-        { header: 'S. No.', dataKey: 'sNo' },
-        ...columnsToInclude.map(col => ({ header: col.label, dataKey: col.key }))
-      ];
+      const isPurchase = activeTab === 'purchase';
+      const titlePrefix = isPurchase ? 'PURCHASE' : 'RE-PURCHASE';
 
       const getItemImage = (row) => {
         if (row.image_url && row.image_url !== 'No Image') return row.image_url;
         const match = items.find(i => i.id === row.item_id || i.item_name === row.item_name);
         return match?.image_url && match.image_url !== 'No Image' ? match.image_url : null;
       };
-
-      const body = allExportRows.map((row, index) => {
-        const rowData = { sNo: index + 1 };
-        columnsToInclude.forEach(col => {
-          if (col.key === 'image') {
-            rowData[col.key] = getItemImage(row) || '';
-          } else if (col.key === 'date') {
-            rowData[col.key] = formatDate(row.created_at);
-          } else if (col.key === 'perUnit') {
-            rowData[col.key] = `Rs ${parseFloat(row.per_unit || 0).toFixed(2)}`;
-          } else if (col.key === 'costPrice') {
-            const cPrice = row.total_cost ?? ((parseFloat(row.qty) || 0) * (parseFloat(row.per_unit) || 0));
-            rowData[col.key] = `Rs ${parseFloat(cPrice || 0).toFixed(2)}`;
-          } else if (col.key === 'balance') {
-            rowData[col.key] = row.qty || 0;
-          } else if (col.key === 'dept') {
-            rowData[col.key] = row.department || '-';
-          } else if (col.key === 'type') {
-            rowData[col.key] = row.inventory_type || '-';
-          } else if (col.key === 'item') {
-            rowData[col.key] = row.item_name || '-';
-          } else if (col.key === 'vendor') {
-            rowData[col.key] = row.vendor_name || '-';
-          } else if (col.key === 'remarks') {
-            rowData[col.key] = row.remarks || '-';
-          } else {
-            rowData[col.key] = row[col.key] || '-';
-          }
-        });
-        return rowData;
-      });
-
-      const totalCostAll = allExportRows.reduce((sum, row) => {
-        const val = parseFloat(row.total_cost || 0);
-        return sum + (isNaN(val) ? 0 : val);
-      }, 0);
-
-      const doc = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = doc.internal.pageSize.width;
-
-      const colStyles = {};
-      const availableWidth = pageWidth - 12;
-      const colCount = reportColumns.length;
-      const hasImage = reportColumns.some(c => c.dataKey === 'image');
-      const imgWeight = 1.4;
-      const otherWeight = 1.0;
-      const totalWeight = hasImage ? (colCount - 1) * otherWeight + imgWeight : colCount * otherWeight;
-      const unitWidth = availableWidth / totalWeight;
-
-      reportColumns.forEach(col => {
-        colStyles[col.dataKey] = { cellWidth: col.dataKey === 'image' ? unitWidth * imgWeight : unitWidth * otherWeight };
-      });
 
       let imageMap = {};
       if (visibleColumns.image) {
@@ -518,78 +462,293 @@ export default function Stock() {
         imageMap = await loadImagesBatched(displayUrls, 12);
       }
 
-      const isPurchase = activeTab === 'purchase';
-      const title = `${isPurchase ? 'PURCHASE' : 'RE-PURCHASE'} HISTORY REPORT`;
-      const countText = `(${body.length})`;
+      // Proportional column weights calibrated for A4 Portrait (198mm usable width)
+      const colWeights = {
+        sNo: 0.85,
+        date: 1.35,
+        type: 1.35,
+        dept: 1.65,
+        item: 3.5,
+        vendor: 2.65,
+        balance: 1.2,
+        unit: 0.85,
+        perUnit: 1.45,
+        costPrice: 1.75,
+        image: 0.8,
+        remarks: 1.1
+      };
 
-      doc.setFontSize(14);
-      doc.setTextColor(124, 58, 237);
-      doc.text(title, 14, 10);
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.width;
+      const pageMargin = 6;
+      const availableWidth = pageWidth - (pageMargin * 2);
 
-      const titleWidth = doc.getTextWidth(title);
-      doc.setFontSize(9);
-      doc.setTextColor(150, 150, 150);
-      doc.text(countText, 14 + titleWidth + 2, 10);
+      // Group rows by Inventory Type (e.g. Grocery, Crockery, Disposal, etc.)
+      const typeGroups = {};
+      allExportRows.forEach(row => {
+        const typeKey = String(row.inventory_type || 'Other').trim();
+        if (!typeGroups[typeKey]) typeGroups[typeKey] = [];
+        typeGroups[typeKey].push(row);
+      });
 
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - 14, 10, { align: 'right' });
+      const distinctTypes = Object.keys(typeGroups);
 
-      doc.setFontSize(8);
-      doc.setTextColor(60, 60, 60);
-      doc.setFont(undefined, 'bold');
+      for (let tIdx = 0; tIdx < distinctTypes.length; tIdx++) {
+        const currentType = distinctTypes[tIdx];
+        const typeRows = typeGroups[currentType];
 
-      const totalCostStr = `Total Cost: Rs ${totalCostAll.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      const dateRangeStr = (startDate || endDate) ? `Date Range: ${startDate || '...'} to ${endDate || '...'}` : 'Date Range: All Time';
+        // Check if visibleColumns.image is enabled AND at least one row in this specific type has an image
+        const hasImageInType = visibleColumns.image && typeRows.some(row => Boolean(getItemImage(row)));
 
-      doc.text(`${totalCostStr}    ${dateRangeStr}`, 14, 16);
+        // Column selection: suppress redundant 'type' column, and suppress 'image' column if no rows in this type have an image
+        const columnsToInclude = columnConfig.filter(col => {
+          if (visibleColumns[col.key] === false) return false;
+          if (col.key === 'type') return false;
+          if (col.key === 'image' && !hasImageInType) return false;
+          return true;
+        });
 
-      // Yield slightly so UI updates
-      await new Promise(r => setTimeout(r, 20));
+        const typeReportColumns = [
+          { header: 'S. No.', dataKey: 'sNo' },
+          ...columnsToInclude.map(col => ({
+            header: col.key === 'perUnit' ? 'Per Unit Price' : col.key === 'costPrice' ? 'Cost Price' : col.label,
+            dataKey: col.key
+          }))
+        ];
 
-      autoTable(doc, {
-        startY: 22,
-        columns: reportColumns,
-        body: body,
-        theme: 'grid',
-        columnStyles: colStyles,
-        headStyles: { fillColor: [109, 40, 217], textColor: 255, fontSize: 7, fontStyle: 'bold', halign: 'center', cellPadding: 2 },
-        styles: { fontSize: 6, cellPadding: 1.5, halign: 'center', valign: 'middle', overflow: 'ellipsize', minCellHeight: 11.5 },
-        alternateRowStyles: { fillColor: [249, 250, 251] },
-        rowPageBreak: 'avoid',
-        margin: { top: 14, right: 6, bottom: 20, left: 6 },
-        willDrawCell: (data) => {
-          if (data.column.dataKey === 'image' && data.cell.section === 'body') data.cell.text = [];
-        },
-        didDrawCell: (data) => {
-          if (data.column.dataKey === 'image' && data.cell.section === 'body') {
-            const url = data.cell.raw;
-            const dispUrl = getDisplayableImageUrl(url);
-            const b64 = imageMap[dispUrl] || imageMap[url];
-            if (b64) {
-              const padding = 1;
-              const imgSize = Math.min(data.cell.width - padding * 2, data.cell.height - padding * 2, 8);
-              const x = data.cell.x + (data.cell.width - imgSize) / 2;
-              const y = data.cell.y + (data.cell.height - imgSize) / 2;
-              try {
-                doc.addImage(b64, 'JPEG', x, y, imgSize, imgSize);
-              } catch {
-                try { doc.addImage(b64, x, y, imgSize, imgSize); } catch {}
+        const hasImage = typeReportColumns.some(c => c.dataKey === 'image');
+        const imageCellWidth = 11.0;
+        const nonImageWidth = hasImage ? availableWidth - imageCellWidth : availableWidth;
+        const nonImageTotalWeight = typeReportColumns
+          .filter(c => c.dataKey !== 'image')
+          .reduce((sum, col) => sum + (colWeights[col.dataKey] || 1.0), 0);
+
+        const typeColStyles = {};
+        typeReportColumns.forEach(col => {
+          if (col.dataKey === 'image') {
+            typeColStyles[col.dataKey] = {
+              cellWidth: imageCellWidth,
+              halign: 'center'
+            };
+          } else {
+            const weight = colWeights[col.dataKey] || 1.0;
+            typeColStyles[col.dataKey] = {
+              cellWidth: (nonImageWidth / nonImageTotalWeight) * weight,
+              halign: ['item', 'vendor', 'dept', 'remarks'].includes(col.dataKey)
+                ? 'left'
+                : ['balance', 'perUnit', 'costPrice'].includes(col.dataKey)
+                ? 'right'
+                : 'center'
+            };
+          }
+        });
+
+        const typeImageUrlMap = {};
+        const body = typeRows.map((row, index) => {
+          const rowData = { sNo: index + 1 };
+          columnsToInclude.forEach(col => {
+            if (col.key === 'image') {
+              typeImageUrlMap[index] = getItemImage(row) || '';
+              rowData[col.key] = '';
+            } else if (col.key === 'date') {
+              rowData[col.key] = formatDate(row.created_at);
+            } else if (col.key === 'perUnit') {
+              rowData[col.key] = Number(row.per_unit) > 0 ? `Rs ${parseFloat(row.per_unit).toFixed(2)}` : '-';
+            } else if (col.key === 'costPrice') {
+              const cPrice = row.total_cost ?? ((parseFloat(row.qty) || 0) * (parseFloat(row.per_unit) || 0));
+              rowData[col.key] = `Rs ${parseFloat(cPrice || 0).toFixed(2)}`;
+            } else if (col.key === 'balance') {
+              rowData[col.key] = row.qty != null ? String(row.qty) : '0';
+            } else if (col.key === 'unit') {
+              rowData[col.key] = row.unit || '-';
+            } else if (col.key === 'dept') {
+              rowData[col.key] = row.department || '-';
+            } else if (col.key === 'item') {
+              rowData[col.key] = row.item_name || '-';
+            } else if (col.key === 'vendor') {
+              rowData[col.key] = row.vendor_name || '-';
+            } else if (col.key === 'remarks') {
+              rowData[col.key] = row.remarks || '-';
+            } else {
+              rowData[col.key] = row[col.key] || '-';
+            }
+          });
+          return rowData;
+        });
+
+        const typeCostSum = typeRows.reduce((sum, row) => {
+          const c = row.total_cost ?? ((parseFloat(row.qty) || 0) * (parseFloat(row.per_unit) || 0));
+          return sum + (parseFloat(c) || 0);
+        }, 0);
+        const typeQtySum = typeRows.reduce((sum, row) => sum + (parseFloat(row.qty) || 0), 0);
+        const allSameUnit = typeRows.every(r => r.unit === typeRows[0]?.unit);
+        const commonUnit = typeRows[0]?.unit || '';
+
+        const footRow = {};
+        typeReportColumns.forEach(col => {
+          if (col.dataKey === 'sNo') {
+            footRow[col.dataKey] = 'Total';
+          } else if (col.dataKey === 'costPrice') {
+            footRow[col.dataKey] = `Rs ${typeCostSum.toFixed(2)}`;
+          } else if (col.dataKey === 'balance') {
+            footRow[col.dataKey] = String(Math.round(typeQtySum * 100) / 100);
+          } else if (col.dataKey === 'unit' && allSameUnit) {
+            footRow[col.dataKey] = commonUnit;
+          } else {
+            footRow[col.dataKey] = '';
+          }
+        });
+
+        // Determine Y position for header and table
+        let headerTopY;
+        let isNewPageForType = false;
+        if (tIdx === 0) {
+          headerTopY = 9;
+          isNewPageForType = true;
+        } else {
+          const lastBottomY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 0;
+          const remainingSpace = doc.internal.pageSize.height - 18 - lastBottomY;
+          if (remainingSpace < 35) {
+            doc.addPage();
+            headerTopY = 9;
+            isNewPageForType = true;
+          } else {
+            headerTopY = lastBottomY + 7;
+            isNewPageForType = false;
+          }
+        }
+
+        const title = `${titlePrefix} HISTORY REPORT - ${currentType}`;
+        const countText = `(${body.length})`;
+
+        doc.setFontSize(13);
+        doc.setTextColor(124, 58, 237);
+        doc.setFont(undefined, 'bold');
+        doc.text(title, pageMargin, headerTopY);
+
+        const titleWidth = doc.getTextWidth(title);
+        doc.setFontSize(8.5);
+        doc.setTextColor(150, 150, 150);
+        doc.setFont(undefined, 'normal');
+        doc.text(countText, pageMargin + titleWidth + 2, headerTopY);
+
+        if (isNewPageForType) {
+          doc.setFontSize(6.5);
+          doc.setTextColor(100, 100, 100);
+          doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - pageMargin, headerTopY, { align: 'right' });
+        }
+
+        // Subheader metadata line
+        doc.setFontSize(7.5);
+        doc.setTextColor(60, 60, 60);
+        doc.setFont(undefined, 'bold');
+
+        const totalCostStr = `Total Cost: Rs ${typeCostSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const dateRangeStr = (startDate || endDate) ? `Date Range: ${startDate || '...'} to ${endDate || '...'}` : 'Date Range: All Time';
+        const filterDetails = [
+          filterDept && `Dept: ${filterDept}`,
+          filterItem && `Item: ${filterItem}`,
+          searchTerm && `Search: "${searchTerm}"`
+        ].filter(Boolean).join('    ');
+
+        const metaLine = [totalCostStr, dateRangeStr, filterDetails].filter(Boolean).join('    |    ');
+        doc.text(metaLine, pageMargin, headerTopY + 5.5);
+
+        // Yield slightly so UI updates
+        await new Promise(r => setTimeout(r, 20));
+
+        autoTable(doc, {
+          startY: headerTopY + 8.5,
+          columns: typeReportColumns,
+          body: body,
+          foot: [footRow],
+          showFoot: 'lastPage',
+          theme: 'grid',
+          columnStyles: typeColStyles,
+          headStyles: {
+            fillColor: [109, 40, 217],
+            textColor: 255,
+            fontSize: 7.2,
+            fontStyle: 'bold',
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: { top: 1.8, bottom: 1.8, left: 0.5, right: 0.5 },
+            overflow: 'linebreak'
+          },
+          footStyles: {
+            fillColor: [237, 233, 254],
+            textColor: [88, 28, 135],
+            fontSize: 7.2,
+            fontStyle: 'bold',
+            valign: 'middle',
+            cellPadding: { top: 1.6, bottom: 1.6, left: 0.6, right: 0.6 }
+          },
+          styles: {
+            fontSize: 7.2,
+            cellPadding: { top: 1.0, bottom: 1.0, left: 0.8, right: 0.8 },
+            valign: 'middle',
+            overflow: 'linebreak',
+            minCellHeight: 5.5
+          },
+          alternateRowStyles: { fillColor: [249, 250, 251] },
+          rowPageBreak: 'avoid',
+          margin: { top: 12, right: pageMargin, bottom: 14, left: pageMargin },
+          didParseCell: (data) => {
+            if (data.section === 'foot') {
+              if (['balance', 'perUnit', 'costPrice'].includes(data.column.dataKey)) {
+                data.cell.styles.halign = 'right';
+              } else if (data.column.dataKey === 'sNo') {
+                data.cell.styles.halign = 'center';
+              }
+            }
+          },
+          willDrawCell: (data) => {
+            if (data.column.dataKey === 'image' && data.cell.section === 'body') data.cell.text = [];
+          },
+          didDrawCell: (data) => {
+            if (data.column.dataKey === 'image' && data.cell.section === 'body') {
+              const url = typeImageUrlMap[data.row.index];
+              if (!url) return;
+              const dispUrl = getDisplayableImageUrl(url);
+              const b64 = imageMap[dispUrl] || imageMap[url];
+              if (b64) {
+                const padding = 0.8;
+                const imgSize = Math.min(data.cell.width - padding * 2, data.cell.height - padding * 2, 5.2);
+                const x = data.cell.x + (data.cell.width - imgSize) / 2;
+                const y = data.cell.y + (data.cell.height - imgSize) / 2;
+                try {
+                  doc.addImage(b64, 'JPEG', x, y, imgSize, imgSize);
+                } catch {
+                  try { doc.addImage(b64, x, y, imgSize, imgSize); } catch {}
+                }
               }
             }
           }
-        },
-        didDrawPage: function () {
-          const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
-          doc.setFontSize(8);
-          doc.setTextColor(120);
-          doc.text(`Page ${pageNumber} of {total_pages_count_string}`, doc.internal.pageSize.width - 6, doc.internal.pageSize.height - 8, { align: 'right' });
-        }
-      });
+        });
+      }
+
+      // Draw page footer numbers cleanly across all generated pages
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setFontSize(7.5);
+        doc.setTextColor(120);
+        doc.text(
+          `Page ${p} of ${totalPages}`,
+          doc.internal.pageSize.width - pageMargin,
+          doc.internal.pageSize.height - 5,
+          { align: 'right' }
+        );
+      }
 
       if (typeof doc.putTotalPages === 'function') doc.putTotalPages('{total_pages_count_string}');
 
-      doc.save(`${isPurchase ? 'Purchase' : 'Re-Purchase'}_History_${new Date().toISOString().split('T')[0]}.pdf`);
+      let filterSuffix = '';
+      if (filterType) filterSuffix += `_${filterType.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      if (filterDept) filterSuffix += `_${filterDept.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      if (filterItem) filterSuffix += `_${filterItem.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+      doc.save(`${isPurchase ? 'Purchase' : 'Re-Purchase'}_History${filterSuffix}_${new Date().toISOString().split('T')[0]}.pdf`);
       showToast('Report generated successfully');
     } catch (err) {
       console.error("Stock PDF Generation Error:", err);
