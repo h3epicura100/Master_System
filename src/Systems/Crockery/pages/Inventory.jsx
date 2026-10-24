@@ -1779,7 +1779,7 @@ const Inventory = () => {
                 } else if (['estimatedCost', 'totalCost'].includes(col.key)) {
                   rowData[col.key] = `Rs ${parseFloat(val || 0).toFixed(2)}`;
                 } else if (col.key === 'unitPrice') {
-                  rowData[col.key] = Number(val) > 0 ? `Rs ${Number(val).toFixed(2)}${row.unit ? ` / ${row.unit}` : ''}` : '-';
+                  rowData[col.key] = Number(val) > 0 ? `Rs ${Number(val).toFixed(2)}` : '-';
                 } else if (col.key === 'qty' || col.key === 'issueQty') {
                   const u = row.unit ? ` ${row.unit}` : '';
                   rowData[col.key] = val != null ? `${val}${u}` : '-';

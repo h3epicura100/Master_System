@@ -95,7 +95,7 @@ export default function Stock() {
     { key: 'balance', label: 'Quantity' },
     { key: 'unit', label: 'Unit' },
     { key: 'perUnit', label: 'Per Unit (₹)' },
-    { key: 'costPrice', label: 'Cost Price (₹)' },
+    { key: 'costPrice', label: 'Estimated Cost (₹)' },
     { key: 'image', label: 'Image' },
     { key: 'remarks', label: 'Remarks' }
   ];
@@ -511,7 +511,7 @@ export default function Stock() {
         const typeReportColumns = [
           { header: 'S. No.', dataKey: 'sNo' },
           ...columnsToInclude.map(col => ({
-            header: col.key === 'perUnit' ? 'Per Unit Price' : col.key === 'costPrice' ? 'Cost Price' : col.label,
+            header: col.key === 'perUnit' ? 'Per Unit Price' : col.key === 'costPrice' ? 'Estimated Cost' : col.label,
             dataKey: col.key
           }))
         ];
