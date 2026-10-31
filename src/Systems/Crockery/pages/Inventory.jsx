@@ -667,13 +667,13 @@ const Inventory = () => {
         const marginOffset = 12;
         const availableWidth = pageWidth - marginOffset;
         const colStyles = {
-          sNo: { cellWidth: 14 },
-          item: { cellWidth: 44 },
+          sNo: { cellWidth: 12 },
+          item: { cellWidth: 26 },
           availableStock: { cellWidth: 24, halign: 'center' },
           qty: { cellWidth: 18 },
-          dishes: { cellWidth: 36 },
-          image: { cellWidth: 22 },
-          remark: { cellWidth: availableWidth - (14 + 44 + 24 + 18 + 36 + 22) }
+          dishes: { cellWidth: 46 },
+          image: { cellWidth: 24 },
+          remark: { cellWidth: availableWidth - (12 + 26 + 24 + 18 + 46 + 24) }
         };
 
         const getItemImage = (row) => {
@@ -1671,12 +1671,19 @@ const Inventory = () => {
           const currentType = distinctTypes[tIdx];
           const typeRows = typeGroups[currentType];
           const isTypeGrocery = isGroceryRow({ inventoryType: currentType }) || isConsumableType(currentType);
+          const typeHasImages = typeRows.some(row => Boolean(getItemImage(row)));
           const allSameTypeReturnDate = typeRows.every(r => formatDate(r.returnDate) === formatDate(typeRows[0]?.returnDate));
 
           // Build tailored per-type columns
           const typeColumnsToInclude = isIssued
             ? issuedPdfOrder
-                .filter(k => visibleColumns[k] !== false && !headerOnlyColumns.has(k))
+                .filter(k => {
+                  if (visibleColumns[k] === false) return false;
+                  if (headerOnlyColumns.has(k)) return false;
+                  // Suppress empty image column for grocery/consumables when no images exist
+                  if (k === 'image' && isTypeGrocery && !typeHasImages) return false;
+                  return true;
+                })
                 .map(k => columnConfig.find(c => c.key === k) || { key: k, label: k })
             : returnPdfOrder
                 .filter(k => {
@@ -1691,6 +1698,8 @@ const Inventory = () => {
                   if (k === 'returnDate' && (allSameReturnDate || allSameTypeReturnDate)) return false;
                   // 5. Remove columns that are already shown in the top header
                   if (headerOnlyColumns.has(k)) return false;
+                  // 6. Suppress empty image column for grocery/consumables when no images exist
+                  if (k === 'image' && isTypeGrocery && !typeHasImages) return false;
                   return true;
                 })
                 .map(k => columnConfig.find(c => c.key === k) || { key: k, label: k });
@@ -1713,20 +1722,52 @@ const Inventory = () => {
           ];
 
           const hasImage = typeReportColumns.some(c => c.dataKey === 'image');
-          const nonImageWidth = hasImage ? availableWidth - 8.5 : availableWidth;
+          const imageCellWidth = isIssued ? 17.0 : 16.0;
+          const nonImageWidth = hasImage ? availableWidth - imageCellWidth : availableWidth;
+
+          // Adaptive column weights:
+          // - For Grocery: keep generous item width (1.95) for long descriptive ingredient names
+          // - For Crockery/tableware: reduce item width (1.15) and remark (0.9-0.95) to eliminate dead white space,
+          //   freeing space for enlarged crockery product images (~10.5-11mm) and dishes
+          const getColWeight = (key) => {
+            if (isTypeGrocery) {
+              if (key === 'item') return 1.95;
+              if (key === 'remark') return 1.2;
+              return colWeights[key] || 1.0;
+            }
+            // For Crockery & tableware items:
+            if (key === 'item') return 1.15;
+            if (key === 'remark') return isIssued ? 0.95 : 0.9;
+            if (isIssued) {
+              if (key === 'dishes') return 1.45;
+              if (key === 'unitPrice') return 1.0;
+            } else {
+              // Return report with 13 columns: tighten integer and unit-price columns
+              if (key === 'damage' || key === 'missing') return 0.65;
+              if (key === 'qty' || key === 'issueQty') return 0.75;
+              if (key === 'sNo') return 0.5;
+              if (key === 'serial') return 0.8;
+              if (key === 'availableStock') return 0.85;
+              if (key === 'notReturned') return 0.8;
+              if (key === 'unitPrice') return 0.95;
+              if (key === 'totalCost') return 1.05;
+            }
+            return colWeights[key] || 1.0;
+          };
+
           const nonImageTotalWeight = typeReportColumns
             .filter(c => c.dataKey !== 'image')
-            .reduce((sum, col) => sum + (colWeights[col.dataKey] || 1.0), 0);
+            .reduce((sum, col) => sum + getColWeight(col.dataKey), 0);
 
           const typeColStyles = {};
           typeReportColumns.forEach(col => {
             if (col.dataKey === 'image') {
               typeColStyles[col.dataKey] = {
-                cellWidth: 8.5,
+                cellWidth: imageCellWidth,
                 halign: 'center'
               };
             } else {
-              const weight = colWeights[col.dataKey] || 1.0;
+              const weight = getColWeight(col.dataKey);
               typeColStyles[col.dataKey] = {
                 cellWidth: (nonImageWidth / nonImageTotalWeight) * weight,
                 halign: ['item', 'party', 'dishes'].includes(col.dataKey) ? 'left' : 'center'
@@ -1744,10 +1785,11 @@ const Inventory = () => {
           } else {
             const lastBottomY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 0;
             // Check remaining vertical space on the current page.
-            // Spacing gap (7mm) + section header (title + 2 metadata rows ~14mm) + table header & 1 row (~14mm) = ~35mm
+            // Spacing gap (7mm) + section header (title + 2 metadata rows ~14mm) + table header & 1 row (~14-19mm) = ~32-38mm
             // Usable height limit on page is doc.internal.pageSize.height - 18mm (~279mm)
             const remainingSpace = doc.internal.pageSize.height - 18 - lastBottomY;
-            if (remainingSpace < 35) {
+            const minRequiredSpace = hasImage ? 38 : 32;
+            if (remainingSpace < minRequiredSpace) {
               doc.addPage();
               headerTopY = 9;
               isNewPageForType = true;
@@ -1983,7 +2025,8 @@ const Inventory = () => {
               fontStyle: 'bold',
               halign: 'center',
               valign: 'middle',
-              cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 }
+              cellPadding: { top: 1.2, bottom: 1.2, left: 0.3, right: 0.3 },
+              minCellHeight: 5.2
             },
             styles: {
               fontSize: 7.5,
@@ -1991,7 +2034,7 @@ const Inventory = () => {
               halign: 'center',
               valign: 'middle',
               overflow: 'linebreak',
-              minCellHeight: 5.2
+              minCellHeight: hasImage ? 12.0 : 5.2
             },
             alternateRowStyles: { fillColor: [249, 250, 251] },
             margin: { top: 12, right: pageMargin, bottom: 14, left: pageMargin },
@@ -2011,7 +2054,9 @@ const Inventory = () => {
                   const dispUrl = getDisplayableImageUrl(url);
                   const b64 = imageMap[dispUrl] || imageMap[url];
                   if (b64) {
-                    const imgSize = Math.min(data.cell.width - 1, data.cell.height - 1, 4.8);
+                    const padding = 0.8;
+                    const maxImgSize = isIssued ? 11.0 : 10.5;
+                    const imgSize = Math.min(data.cell.width - padding * 2, data.cell.height - padding * 2, maxImgSize);
                     const x = data.cell.x + (data.cell.width - imgSize) / 2;
                     const y = data.cell.y + (data.cell.height - imgSize) / 2;
                     try {
@@ -2337,11 +2382,8 @@ const Inventory = () => {
                             totalCost={group.totalCost}
                             isDownloading={generatingReportParty === group.partyName}
                             onDownloadReport={() => {
-                              if (activeTab === 'issued') {
-                                handleGeneratePartyReport(group.partyName, group.rows);
-                              } else {
-                                handleGeneratePartyReturnReport(group.partyName);
-                              }
+                              setGeneratingReportParty(group.partyName);
+                              handleGenerateReport(group.partyName);
                             }}
                             onClick={() => setSelectedPartyCard(group.partyName)}
                           />
