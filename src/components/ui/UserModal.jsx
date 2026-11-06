@@ -140,6 +140,15 @@ function FileUploadField({ label, fieldName, fileData, fileName, onFileSelect, o
   )
 }
 
+// Page Definitions for Pete module (5 pages)
+export const PETE_PAGES = [
+  { id: 'dashboard', name: 'Dashboard', route: '/pete/dashboard', desc: 'Person-wise incoming/outgoing ledger summary' },
+  { id: 'form', name: 'Add Entry', route: '/pete/form', desc: 'Record new incoming/outgoing transaction entries' },
+  { id: 'receiving', name: 'Receiving', route: '/pete/receiving', desc: 'Vendor invoice receiving entries' },
+  { id: 'reports', name: 'Reports', route: '/pete/reports', desc: 'Transaction history, filters & drill-down detail' },
+  { id: 'master', name: 'Master Data', route: '/pete/master', desc: 'Manage persons, modes, group heads & vendors' },
+]
+
 // Page Definitions for PMS module (24 total: 5 core, 17 departments, 2 master & logs)
 export const PMS_PAGES = [
   // Core / Management
@@ -191,7 +200,7 @@ export const HRMS_PAGES = [
   { id: 'payroll', name: 'Monthly Payroll', route: '/hrms/payroll', desc: 'Attendance wage calculations, leave cuts, OT, EMIs & salary slips' },
 ]
 
-export const TOTAL_PAGE_COUNT = PMS_PAGES.length + IMS_PAGES.length + HRMS_PAGES.length
+export const TOTAL_PAGE_COUNT = PETE_PAGES.length + PMS_PAGES.length + IMS_PAGES.length + HRMS_PAGES.length
 
 export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   const [activeTab, setActiveTab] = useState('details') // 'details' | 'permissions'
@@ -223,7 +232,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
     aadhar_address: '',
     current_address: '',
     page_access: {
-      pete: { access: false, role: 'staff', pages: [] },
+      pete: { access: false, role: 'staff', full_access: false, pages: [] },
       ims: { access: false, role: 'staff', full_access: false, pages: [] },
       pms: { access: false, role: 'staff', full_access: false, pages: [] },
       hrms: { access: false, role: 'staff', full_access: false, pages: [] },
@@ -270,6 +279,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
           pete: {
             access: pAccess.pete?.access || false,
             role: userRole,
+            full_access: pAccess.pete?.full_access || false,
             pages: Array.isArray(pAccess.pete?.pages) ? pAccess.pete.pages : [],
           },
           ims: {
@@ -313,7 +323,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         aadhar_address: '',
         current_address: '',
         page_access: {
-          pete: { access: false, role: 'staff', pages: [] },
+          pete: { access: false, role: 'staff', full_access: false, pages: [] },
           ims: { access: false, role: 'staff', full_access: false, pages: [] },
           pms: { access: false, role: 'staff', full_access: false, pages: [] },
           hrms: { access: false, role: 'staff', full_access: false, pages: [] },
@@ -330,6 +340,12 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   const totalEnabledPages = useMemo(() => {
     let count = 0
     const pa = formData.page_access
+
+    if (pa.pete?.full_access) {
+      count += PETE_PAGES.length
+    } else {
+      count += (pa.pete?.pages || []).length
+    }
 
     if (pa.ims?.full_access) {
       count += IMS_PAGES.length
@@ -431,6 +447,25 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
   }
 
   // Handlers for Permissions
+  const handlePeteFullAccessToggle = () => {
+    setFormData((prev) => {
+      const current = prev.page_access.pete || {}
+      const newFullAccess = !current.full_access
+      return {
+        ...prev,
+        page_access: {
+          ...prev.page_access,
+          pete: {
+            ...current,
+            access: newFullAccess,
+            full_access: newFullAccess,
+            pages: newFullAccess ? PETE_PAGES.map((p) => p.id) : [],
+          },
+        },
+      }
+    })
+  }
+
   const handleImsFullAccessToggle = () => {
     setFormData((prev) => {
       const current = prev.page_access.ims || {}
@@ -495,6 +530,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
       // If currently in full_access mode, start from all pages
       if (currentModule.full_access) {
+        if (moduleKey === 'pete') currentPages = PETE_PAGES.map((p) => p.id)
         if (moduleKey === 'ims') currentPages = IMS_PAGES.map((p) => p.id)
         if (moduleKey === 'pms') currentPages = PMS_PAGES.map((p) => p.id)
         if (moduleKey === 'hrms') currentPages = HRMS_PAGES.map((p) => p.id)
@@ -506,6 +542,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
         : [...currentPages, pageId]
 
       let totalPagesInModule = 0
+      if (moduleKey === 'pete') totalPagesInModule = PETE_PAGES.length
       if (moduleKey === 'ims') totalPagesInModule = IMS_PAGES.length
       if (moduleKey === 'pms') totalPagesInModule = PMS_PAGES.length
       if (moduleKey === 'hrms') totalPagesInModule = HRMS_PAGES.length
@@ -529,6 +566,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
   const handleSelectAllInModule = (moduleKey) => {
     let allPageIds = []
+    if (moduleKey === 'pete') allPageIds = PETE_PAGES.map((p) => p.id)
     if (moduleKey === 'ims') allPageIds = IMS_PAGES.map((p) => p.id)
     if (moduleKey === 'pms') allPageIds = PMS_PAGES.map((p) => p.id)
     if (moduleKey === 'hrms') allPageIds = HRMS_PAGES.map((p) => p.id)
@@ -558,6 +596,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
       ...prev,
       page_access: {
         ...prev.page_access,
+        pete: { access: true, role: 'admin', full_access: true, pages: PETE_PAGES.map((p) => p.id) },
         ims: { access: true, role: 'admin', full_access: true, pages: IMS_PAGES.map((p) => p.id) },
         pms: { access: true, role: 'admin', full_access: true, pages: PMS_PAGES.map((p) => p.id) },
         hrms: { access: true, role: 'admin', full_access: true, pages: HRMS_PAGES.map((p) => p.id) },
@@ -570,6 +609,7 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
       ...prev,
       page_access: {
         ...prev.page_access,
+        pete: { access: false, role: 'staff', full_access: false, pages: [] },
         ims: { access: false, role: 'user', full_access: false, pages: [] },
         pms: { access: false, role: 'staff', full_access: false, pages: [] },
         hrms: { access: false, role: 'staff', full_access: false, pages: [] },
@@ -607,6 +647,12 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
 
       const pageAccessPayload = isAdmin
         ? {
+            pete: {
+              access: true,
+              role: 'admin',
+              full_access: true,
+              pages: PETE_PAGES.map((p) => p.id),
+            },
             ims: {
               access: true,
               role: 'admin',
@@ -627,6 +673,11 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
             },
           }
         : {
+            pete: {
+              ...formData.page_access.pete,
+              access: Boolean(formData.page_access.pete?.full_access || (formData.page_access.pete?.pages || []).length > 0),
+              role: 'staff',
+            },
             ims: {
               ...formData.page_access.ims,
               access: Boolean(formData.page_access.ims?.full_access || (formData.page_access.ims?.pages || []).length > 0),
@@ -1233,6 +1284,96 @@ export function UserModal({ isOpen, onClose, onSave, editingUser = null }) {
                   >
                     Revoke All
                   </button>
+                </div>
+              </div>
+
+              {/* PETE MODULE */}
+              <div className="rounded-xl border border-slate-200/90 overflow-hidden shadow-xs">
+                {/* Section Header */}
+                <div className="p-4 bg-teal-50/60 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-slate-900 text-sm">Pete</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-teal-100 text-teal-800">
+                          Ledger & Vendors
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          (formData.page_access.pete?.full_access ? PETE_PAGES.length : (formData.page_access.pete?.pages || []).length) > 0
+                            ? 'bg-teal-200/80 text-teal-900'
+                            : 'bg-slate-200/80 text-slate-600'
+                        }`}>
+                          {formData.page_access.pete?.full_access ? PETE_PAGES.length : (formData.page_access.pete?.pages || []).length}/{PETE_PAGES.length} Selected
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">Dashboard, Add Entry, Receiving, Reports & Master Data</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {/* Full Access Switch */}
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={formData.page_access.pete?.full_access || false}
+                        onChange={handlePeteFullAccessToggle}
+                        className="w-3.5 h-3.5 rounded text-teal-600 focus:ring-teal-500"
+                      />
+                      <span>Full Access</span>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAllInModule('pete')}
+                      className="text-xs font-bold text-teal-700 hover:text-teal-800 transition-colors"
+                    >
+                      {(formData.page_access.pete?.full_access ? PETE_PAGES.length : (formData.page_access.pete?.pages || []).length) === PETE_PAGES.length
+                        ? 'Deselect All'
+                        : 'Select All'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Page List */}
+                <div className="divide-y divide-slate-100 bg-white">
+                  {filterPages(PETE_PAGES).map((page) => {
+                    const isChecked = Boolean(
+                      formData.page_access.pete?.full_access ||
+                        (formData.page_access.pete?.pages || []).includes(page.id)
+                    )
+
+                    return (
+                      <label
+                        key={page.id}
+                        className="flex items-center justify-between p-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handlePageToggle('pete', page.id)}
+                            className="w-4 h-4 rounded text-teal-600 border-slate-300 focus:ring-teal-500"
+                          />
+                          <div>
+                            <span className="font-bold text-slate-800 text-xs block">{page.name}</span>
+                            <span className="text-[11px] text-slate-400 block">{page.desc}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">{page.route}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isChecked
+                                ? 'bg-teal-100 text-teal-700'
+                                : 'bg-slate-100 text-slate-400'
+                            }`}
+                          >
+                            {isChecked ? 'Granted' : 'Restricted'}
+                          </span>
+                        </div>
+                      </label>
+                    )
+                  })}
                 </div>
               </div>
 

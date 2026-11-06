@@ -217,6 +217,7 @@ export function GlobalSettingsPage() {
             filteredUsers.map((user) => {
               const isAdmin = user.role === 'admin'
               const pa = user.page_access || {}
+              const hasPete = isAdmin || pa.pete?.access === true
               const hasH3ms = isAdmin || pa.pms?.access === true
               const hasIms = isAdmin || pa.ims?.access === true
               const hasHrms = isAdmin || pa.hrms?.access === true
@@ -301,6 +302,13 @@ export function GlobalSettingsPage() {
                     <div className="flex flex-wrap items-center gap-1 justify-end">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          hasPete ? 'bg-teal-100 text-teal-800' : 'bg-slate-100 text-slate-300 line-through'
+                        }`}
+                      >
+                        Pete
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           hasH3ms ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-300 line-through'
                         }`}
                       >
@@ -362,6 +370,7 @@ export function GlobalSettingsPage() {
                   filteredUsers.map((user) => {
                     const isAdmin = user.role === 'admin'
                     const pa = user.page_access || {}
+                    const hasPete = isAdmin || pa.pete?.access === true
                     const hasH3ms = isAdmin || pa.pms?.access === true
                     const hasIms = isAdmin || pa.ims?.access === true
                     const hasHrms = isAdmin || pa.hrms?.access === true
@@ -438,6 +447,15 @@ export function GlobalSettingsPage() {
 
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                hasPete
+                                  ? 'bg-teal-100 text-teal-800'
+                                  : 'bg-slate-100 text-slate-300 line-through'
+                              }`}
+                            >
+                              Pete
+                            </span>
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 hasH3ms

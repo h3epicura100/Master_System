@@ -11,7 +11,8 @@ import {
   Lock,
   Utensils,
   Clock,
-  CalendarCheck
+  CalendarCheck,
+  Wallet
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -28,6 +29,10 @@ export function PortalDashboard() {
   }
 
   // Check module permissions
+  const hasPete = canAccessSystem('pete')
+  const peteRole = getModuleRole('pete')
+  const petePageCount = isAdmin() || currentUser?.page_access?.pete?.full_access ? 5 : (currentUser?.page_access?.pete?.pages || []).length
+
   const hasPms = canAccessSystem('pms')
   const pmsRole = getModuleRole('pms')
   const pmsPageCount = isAdmin() || currentUser?.page_access?.pms?.full_access ? 24 : (currentUser?.page_access?.pms?.pages || []).length
@@ -114,6 +119,13 @@ export function PortalDashboard() {
               Authorized Systems:
             </span>
             <div className="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto">
+              {hasPete && (
+                <span className="inline-flex items-center justify-center gap-1 px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-xs font-bold bg-teal-50 text-teal-700 border border-teal-200/80">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  Pete
+                </span>
+              )}
+
               {hasPms && (
                 <span className="inline-flex items-center justify-center gap-1 px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
                   <CheckCircle2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -135,7 +147,7 @@ export function PortalDashboard() {
                 </span>
               )}
 
-              {!hasPms && !hasIms && !hasHrms && (
+              {!hasPete && !hasPms && !hasIms && !hasHrms && (
                 <span className="text-xs text-slate-400 italic font-medium">
                   No authorized systems assigned. Contact administrator.
                 </span>
@@ -155,6 +167,48 @@ export function PortalDashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6 w-full min-w-0">
+          {/* Pete System */}
+          {hasPete && (
+            <div className="rounded-2xl sm:rounded-3xl border border-slate-200/90 p-4 sm:p-6 flex flex-col justify-between transition-all w-full min-w-0 bg-white shadow-xs hover:shadow-lg hover:-translate-y-0.5">
+              <div>
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold shrink-0">
+                    <Wallet className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-extrabold uppercase tracking-wider shrink-0 bg-teal-100 text-teal-800">
+                    Accessible
+                  </span>
+                </div>
+
+                <h4 className="text-base sm:text-lg font-bold text-slate-900">Pete</h4>
+                <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">
+                  Vendor payment ledger: transaction entries, receiving records, financial reports & master dropdowns.
+                </p>
+
+                <div className="mt-4 pt-3.5 border-t border-slate-100 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span>Assigned Role:</span>
+                    <span className="font-bold text-slate-900 uppercase">{peteRole}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span>Page Access:</span>
+                    <span className="font-bold text-slate-900">{petePageCount} / 5 Pages</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-3.5 border-t border-slate-100">
+                <Link
+                  to="/pete/dashboard"
+                  className="w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-200 group"
+                >
+                  <span>Launch Pete</span>
+                  <Sparkles className="w-3.5 h-3.5 text-teal-200 group-hover:rotate-12 transition-transform shrink-0" />
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* H3MS System */}
           {hasPms && (
             <div className="rounded-2xl sm:rounded-3xl border border-slate-200/90 p-4 sm:p-6 flex flex-col justify-between transition-all w-full min-w-0 bg-white shadow-xs hover:shadow-lg hover:-translate-y-0.5">
@@ -282,7 +336,7 @@ export function PortalDashboard() {
           )}
 
           {/* No Systems Assigned State */}
-          {!hasPms && !hasIms && !hasHrms && (
+          {!hasPete && !hasPms && !hasIms && !hasHrms && (
             <div className="col-span-full py-12 px-6 text-center bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs">
               <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
                 <Lock className="w-6 h-6" />

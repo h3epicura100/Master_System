@@ -24,6 +24,16 @@ export function MasterLayout() {
         return 'Portal Dashboard'
       case '/global-settings':
         return 'Global Settings'
+      case '/pete/dashboard':
+        return 'Pete · Dashboard'
+      case '/pete/form':
+        return 'Pete · Add Entry'
+      case '/pete/receiving':
+        return 'Pete · Receiving'
+      case '/pete/reports':
+        return 'Pete · Reports'
+      case '/pete/master':
+        return 'Pete · Master Data'
       case '/pms/dashboard':
         return 'H3MS · Dashboard'
       case '/pms/bookings':
@@ -93,6 +103,7 @@ export function MasterLayout() {
       case '/hrms/payroll':
         return 'HRMS · Monthly Payroll'
       default:
+        if (location.pathname.startsWith('/pete')) return 'Pete'
         if (location.pathname.startsWith('/pms')) return 'H3MS System'
         if (location.pathname.startsWith('/crockery')) return 'Crockery IMS'
         if (location.pathname.startsWith('/hrms')) return 'HRMS System'

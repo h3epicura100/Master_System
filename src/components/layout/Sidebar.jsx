@@ -36,7 +36,10 @@ import {
   Banknote,
   TrendingUp,
   Users,
-  Clock
+  Clock,
+  Wallet,
+  FilePlus2,
+  Inbox
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { usePendingCounts } from '../../Systems/PMS/hooks/usePendingCounts'
@@ -71,9 +74,18 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
     return name.slice(0, 2).toUpperCase()
   }
 
+  const hasPete = canAccessSystem('pete')
   const hasPms = canAccessSystem('pms')
   const hasCrockery = canAccessSystem('ims')
   const hasHrms = canAccessSystem('hrms')
+
+  const peteNavItems = [
+    { name: 'Dashboard', path: '/pete/dashboard', icon: LayoutDashboard, show: canAccessPage('pete', 'dashboard') },
+    { name: 'Add Entry', path: '/pete/form', icon: FilePlus2, show: canAccessPage('pete', 'form') },
+    { name: 'Receiving', path: '/pete/receiving', icon: Inbox, show: canAccessPage('pete', 'receiving') },
+    { name: 'Reports', path: '/pete/reports', icon: BarChart3, show: canAccessPage('pete', 'reports') },
+    { name: 'Master Data', path: '/pete/master', icon: Sliders, show: canAccessPage('pete', 'master') },
+  ].filter((item) => item.show)
 
   const hrmsNavItems = [
     { name: 'Daily Attendance', path: '/hrms/attendance', icon: CalendarCheck, show: canAccessPage('hrms', 'attendance'), key: 'attendance' },
@@ -219,6 +231,44 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
               )
             })}
         </div>
+
+        {/* Pete System Section */}
+        {hasPete && peteNavItems.length > 0 && (
+          <div className="space-y-1 pt-2 border-t border-slate-100">
+            <div className="px-3 pb-1 flex items-center gap-1.5 text-[10px] font-bold text-teal-700 uppercase tracking-widest">
+              <Wallet className="w-3.5 h-3.5 text-teal-600" />
+              <span>Pete</span>
+            </div>
+            {peteNavItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setMobileOpen && setMobileOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3.5 py-2 rounded-xl font-medium text-sm transition-all duration-200 group ${
+                      isActive
+                        ? 'bg-teal-600 text-white shadow-md shadow-teal-200 font-semibold'
+                        : 'text-slate-600 hover:bg-teal-50/60 hover:text-teal-900'
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        className={`w-4 h-4 transition-transform group-hover:scale-110 ${
+                          isActive ? 'text-white' : 'text-slate-400 group-hover:text-teal-600'
+                        }`}
+                      />
+                      <span>{item.name}</span>
+                    </>
+                  )}
+                </NavLink>
+              )
+            })}
+          </div>
+        )}
 
         {/* H3MS System Section */}
         {hasPms && pmsNavItems.length > 0 && (

@@ -10,6 +10,13 @@ import { GlobalSettingsPage } from './pages/GlobalSettingsPage'
 
 import { PmsQueryProvider } from './Systems/PMS/queryClient'
 
+// Pete System Pages
+import { PeteDashboardPage } from './Systems/Pete/pages/PeteDashboardPage'
+import { PeteFormPage } from './Systems/Pete/pages/PeteFormPage'
+import { PeteReceivingPage } from './Systems/Pete/pages/PeteReceivingPage'
+import { PeteReportsPage } from './Systems/Pete/pages/PeteReportsPage'
+import { PeteMasterPage } from './Systems/Pete/pages/PeteMasterPage'
+
 // H3MS System Pages
 import { PmsDashboardPage } from './Systems/PMS/pages/PmsDashboardPage'
 import { PmsBookingsPage } from './Systems/PMS/pages/PmsBookingsPage'
@@ -87,6 +94,49 @@ export function App() {
               element={
                 <ProtectedRoute adminOnly>
                   <GlobalSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Pete System Routes */}
+            <Route path="/pete" element={<Navigate to="/pete/dashboard" replace />} />
+            <Route
+              path="/pete/dashboard"
+              element={
+                <ProtectedRoute system="pete" page="dashboard">
+                  <PeteDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pete/form"
+              element={
+                <ProtectedRoute system="pete" page="form">
+                  <PeteFormPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pete/receiving"
+              element={
+                <ProtectedRoute system="pete" page="receiving">
+                  <PeteReceivingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pete/reports"
+              element={
+                <ProtectedRoute system="pete" page="reports">
+                  <PeteReportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pete/master"
+              element={
+                <ProtectedRoute system="pete" page="master">
+                  <PeteMasterPage />
                 </ProtectedRoute>
               }
             />
