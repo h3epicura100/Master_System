@@ -60,6 +60,16 @@ export function buildCustomSize({ width, height, unit }) {
   };
 }
 
+// A dish's size choice is 'default' (follow the page-level default size), a
+// preset id, or CUSTOM_SIZE_ID (the page-level custom dimensions).
+export const DEFAULT_SIZE_CHOICE = 'default';
+
+export function resolveSizeChoice(choice, { defaultSize, customSize }) {
+  if (!choice || choice === DEFAULT_SIZE_CHOICE) return defaultSize;
+  if (choice === CUSTOM_SIZE_ID) return customSize;
+  return getTagSize(choice);
+}
+
 export function isValidCustomDimensions({ width, height }) {
   const w = Number(width);
   const h = Number(height);

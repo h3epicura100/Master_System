@@ -1,50 +1,102 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Tags, Download, Info, Loader2, CheckCircle2, Ruler, X, Type } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Tags, Download, Loader2, CheckCircle2, Type } from 'lucide-react';
 import { toast } from 'sonner';
-import { TAG_SIZES, CUSTOM_SIZE_ID, getTagSize, buildCustomSize, isValidCustomDimensions } from './tagSizes';
+import {
+  TAG_SIZES,
+  CUSTOM_SIZE_ID,
+  DEFAULT_SIZE_CHOICE,
+  getTagSize,
+  buildCustomSize,
+  isValidCustomDimensions,
+  resolveSizeChoice,
+} from './tagSizes';
 import { FONT_STYLES } from './tagFontStyles';
-import { parseDishPairs } from './tagParser';
 import { generateTagsPdf, downloadTagsPdf } from './tagPdfGenerator';
 import { renderPdfPagesToDataUrls } from './pdfPreviewRenderer';
 import { TagPreview } from './TagPreview';
+import { SizeSelector } from './SizeSelector';
+import { SmartPasteBox } from './SmartPasteBox';
+import { DishList } from './DishList';
 
-const PREVIEW_PX_PER_MM = 3.5;
 const PREVIEW_DEBOUNCE_MS = 400;
-const UNITS = ['mm', 'cm', 'in'];
+
+let dishIdCounter = 0;
+const makeDish = ({ title = '', description = '' } = {}) => ({
+  id: `dish-${++dishIdCounter}`,
+  title,
+  description,
+  sizeId: DEFAULT_SIZE_CHOICE,
+});
 
 export function TagCreatorPage() {
   const [sizeId, setSizeId] = useState(TAG_SIZES[0].id);
+  const [custom, setCustom] = useState({ width: '150', height: '100', unit: 'mm' });
   const [fontStyleId, setFontStyleId] = useState(FONT_STYLES[0].id);
-  const [customWidth, setCustomWidth] = useState('150');
-  const [customHeight, setCustomHeight] = useState('100');
-  const [customUnit, setCustomUnit] = useState('mm');
-  const [titlesInput, setTitlesInput] = useState('');
-  const [descriptionsInput, setDescriptionsInput] = useState('');
+  const [dishes, setDishes] = useState([]);
+  const [focusDishId, setFocusDishId] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewPages, setPreviewPages] = useState([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
-  const isCustomSelected = sizeId === CUSTOM_SIZE_ID;
-  const customDims = { width: customWidth, height: customHeight, unit: customUnit };
-  const isCustomValid = !isCustomSelected || isValidCustomDimensions(customDims);
+  const dishListRef = useRef(null);
 
-  const size = useMemo(() => {
-    if (isCustomSelected) {
-      return isValidCustomDimensions(customDims) ? buildCustomSize(customDims) : null;
-    }
-    return getTagSize(sizeId);
-  }, [sizeId, isCustomSelected, customWidth, customHeight, customUnit]);
-
-  const dishes = useMemo(
-    () => parseDishPairs(titlesInput, descriptionsInput),
-    [titlesInput, descriptionsInput]
+  // --- Sizes -------------------------------------------------------------
+  const isCustomValid = isValidCustomDimensions(custom);
+  const customSize = useMemo(
+    () => (isCustomValid ? buildCustomSize(custom) : null),
+    [isCustomValid, custom.width, custom.height, custom.unit]
   );
+  const defaultSize = useMemo(
+    () => (sizeId === CUSTOM_SIZE_ID ? customSize : getTagSize(sizeId)),
+    [sizeId, customSize]
+  );
+  const showCustomFields = sizeId === CUSTOM_SIZE_ID || dishes.some((d) => d.sizeId === CUSTOM_SIZE_ID);
 
+  // --- Dish list ---------------------------------------------------------
+  const addDetectedDishes = (detected) => {
+    setDishes((prev) => [...prev, ...detected.map(makeDish)]);
+    // Bring the new rows into view once they have rendered.
+    requestAnimationFrame(() => {
+      dishListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const addBlankDish = () => {
+    const dish = makeDish();
+    setFocusDishId(dish.id);
+    setDishes((prev) => [...prev, dish]);
+  };
+
+  const updateDish = (id, patch) =>
+    setDishes((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+
+  const removeDish = (id) => setDishes((prev) => prev.filter((d) => d.id !== id));
+
+  const clearDishes = () => {
+    if (window.confirm('Remove all dishes from the list?')) setDishes([]);
+  };
+
+  // Tags that will actually be printed: rows with a name, each with its resolved size.
+  const printable = useMemo(
+    () =>
+      dishes
+        .filter((d) => d.title.trim())
+        .map((d) => ({
+          title: d.title.trim(),
+          description: d.description.trim(),
+          size: resolveSizeChoice(d.sizeId, { defaultSize, customSize }),
+        })),
+    [dishes, defaultSize, customSize]
+  );
+  const hasInvalidSize = printable.some((d) => !d.size);
+  const readyDishes = useMemo(() => (hasInvalidSize ? [] : printable), [hasInvalidSize, printable]);
+
+  // --- Live preview ------------------------------------------------------
   // The preview renders the real generated PDF (via pdf.js) rather than a
   // separate re-implementation of the layout, so it's always pixel-identical
   // to what gets downloaded.
   useEffect(() => {
-    if (dishes.length === 0 || !size) {
+    if (readyDishes.length === 0) {
       setPreviewPages([]);
       setIsPreviewLoading(false);
       return;
@@ -55,9 +107,16 @@ export function TagCreatorPage() {
 
     const timer = setTimeout(async () => {
       try {
-        const doc = await generateTagsPdf({ dishes, size, fontStyleId });
-        const pages = await renderPdfPagesToDataUrls(doc, { widthMm: size.widthMm });
-        if (!cancelled) setPreviewPages(pages);
+        const doc = await generateTagsPdf({ dishes: readyDishes, fontStyleId });
+        const pages = await renderPdfPagesToDataUrls(doc);
+        if (!cancelled) {
+          setPreviewPages(
+            pages.map((page, i) => ({
+              ...page,
+              label: `${readyDishes[i].size.label} · ${readyDishes[i].size.sublabel}`,
+            }))
+          );
+        }
       } catch (err) {
         console.error('Tag preview render failed:', err);
         if (!cancelled) setPreviewPages([]);
@@ -70,22 +129,23 @@ export function TagCreatorPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [dishes, size, fontStyleId]);
+  }, [readyDishes, fontStyleId]);
 
+  // --- Download ----------------------------------------------------------
   const handleGenerate = async () => {
-    if (dishes.length === 0) {
-      toast.error('Enter at least one dish name to generate tags.');
+    if (printable.length === 0) {
+      toast.error('Add at least one dish with a name to generate tags.');
       return;
     }
-    if (!size) {
+    if (hasInvalidSize) {
       toast.error('Enter a valid custom width and height first.');
       return;
     }
 
     setIsGenerating(true);
     try {
-      await downloadTagsPdf({ dishes, size, fontStyleId });
-      toast.success(`Generated ${dishes.length} tag${dishes.length > 1 ? 's' : ''} as PDF.`);
+      await downloadTagsPdf({ dishes: readyDishes, fontStyleId });
+      toast.success(`Generated ${readyDishes.length} tag${readyDishes.length > 1 ? 's' : ''} in one PDF.`);
     } catch (err) {
       console.error('Tag PDF generation failed:', err);
       toast.error('Failed to generate PDF. Please try again.');
@@ -94,9 +154,16 @@ export function TagCreatorPage() {
     }
   };
 
-  const previewWidthPx = size ? size.widthMm * PREVIEW_PX_PER_MM : 0;
-  const previewHeightPx = size ? size.heightMm * PREVIEW_PX_PER_MM : 0;
-  const canGenerate = !isGenerating && dishes.length > 0 && !!size;
+  const canGenerate = !isGenerating && readyDishes.length > 0;
+
+  const sizeSummary = useMemo(() => {
+    const unique = new Map(readyDishes.map((d) => [`${d.size.label}|${d.size.sublabel}`, d.size]));
+    if (unique.size === 1) {
+      const only = [...unique.values()][0];
+      return { title: only.label, detail: only.sublabel };
+    }
+    return { title: 'Mixed sizes', detail: `${unique.size} sizes` };
+  }, [readyDishes]);
 
   return (
     <div className="h-full min-h-0 flex flex-col w-full min-w-0 max-w-[1400px] mx-auto p-4 lg:p-8">
@@ -119,199 +186,77 @@ export function TagCreatorPage() {
           className="flex items-center justify-center gap-2 bg-[#0a4a87] hover:bg-[#083d70] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors shrink-0"
         >
           <Download className="w-4 h-4" />
-          {isGenerating ? 'Generating...' : `Download PDF (${dishes.length} tag${dishes.length === 1 ? '' : 's'})`}
+          {isGenerating
+            ? 'Generating...'
+            : `Download PDF (${printable.length} tag${printable.length === 1 ? '' : 's'})`}
         </button>
       </div>
 
       {/* Body — fills remaining height. On lg+, each section scrolls independently
           and the page itself never grows a scrollbar; on small screens it falls
           back to one natural page scroll. */}
-      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6">
         {/* Section 1: Tag Settings */}
         <section className="lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3 px-1">
             1. Tag Settings
           </h2>
           <div className="space-y-5 pb-4">
-              <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-sm font-medium text-slate-700 mb-2 block">Tag Size</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {TAG_SIZES.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setSizeId(s.id)}
-                      className={`flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                        sizeId === s.id
-                          ? 'border-[#0a4a87] bg-[#0a4a87]/5'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        {sizeId === s.id && <CheckCircle2 className="w-4 h-4 text-[#0a4a87] shrink-0" />}
-                        <span className={`text-sm font-medium ${sizeId === s.id ? 'text-[#0a4a87]' : 'text-slate-700'}`}>
-                          {s.label}
-                        </span>
-                      </span>
-                      <span className="text-xs text-slate-400">{s.sublabel}</span>
-                    </button>
-                  ))}
+            <SizeSelector
+              sizeId={sizeId}
+              onSizeChange={setSizeId}
+              custom={custom}
+              onCustomChange={setCustom}
+              isCustomValid={isCustomValid}
+              showCustomFields={showCustomFields}
+            />
 
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <label className="text-sm font-medium text-slate-700 mb-2 block">Font Style</label>
+              <div className="grid grid-cols-2 gap-2">
+                {FONT_STYLES.map((f) => (
                   <button
+                    key={f.id}
                     type="button"
-                    onClick={() => setSizeId(CUSTOM_SIZE_ID)}
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                      isCustomSelected
+                    onClick={() => setFontStyleId(f.id)}
+                    className={`flex flex-col items-start px-3 py-2 rounded-lg border text-left transition-colors ${
+                      fontStyleId === f.id
                         ? 'border-[#0a4a87] bg-[#0a4a87]/5'
                         : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <span className="flex items-center gap-2">
-                      {isCustomSelected ? (
-                        <CheckCircle2 className="w-4 h-4 text-[#0a4a87] shrink-0" />
+                    <span className="flex items-center gap-1.5">
+                      {fontStyleId === f.id ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#0a4a87] shrink-0" />
                       ) : (
-                        <Ruler className="w-4 h-4 text-slate-400 shrink-0" />
+                        <Type className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       )}
-                      <span className={`text-sm font-medium ${isCustomSelected ? 'text-[#0a4a87]' : 'text-slate-700'}`}>
-                        Custom Size
+                      <span className={`text-sm font-medium ${fontStyleId === f.id ? 'text-[#0a4a87]' : 'text-slate-700'}`}>
+                        {f.label}
                       </span>
                     </span>
+                    <span className="text-xs text-slate-400 mt-0.5">{f.sublabel}</span>
                   </button>
-                </div>
-
-                {isCustomSelected && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Width</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={customWidth}
-                        onChange={(e) => setCustomWidth(e.target.value)}
-                        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0a4a87]/30 focus:border-[#0a4a87]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Height</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={customHeight}
-                        onChange={(e) => setCustomHeight(e.target.value)}
-                        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0a4a87]/30 focus:border-[#0a4a87]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Unit</label>
-                      <select
-                        value={customUnit}
-                        onChange={(e) => setCustomUnit(e.target.value)}
-                        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0a4a87]/30 focus:border-[#0a4a87]"
-                      >
-                        {UNITS.map((u) => (
-                          <option key={u} value={u}>{u}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {!isCustomValid && (
-                      <p className="col-span-3 text-xs text-red-500 mt-0.5">Enter a width and height greater than 0.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-sm font-medium text-slate-700 mb-2 block">Font Style</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {FONT_STYLES.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setFontStyleId(f.id)}
-                      className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                        fontStyleId === f.id
-                          ? 'border-[#0a4a87] bg-[#0a4a87]/5'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        {fontStyleId === f.id ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#0a4a87] shrink-0" />
-                        ) : (
-                          <Type className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        )}
-                        <span className={`text-sm font-medium ${fontStyleId === f.id ? 'text-[#0a4a87]' : 'text-slate-700'}`}>
-                          {f.label}
-                        </span>
-                      </span>
-                      <span className="text-xs text-slate-400 mt-0.5">{f.sublabel}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-slate-700">Upper Text (Dish Names)</label>
-                  {titlesInput && (
-                    <button
-                      type="button"
-                      onClick={() => setTitlesInput('')}
-                      className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3 h-3" /> Clear
-                    </button>
-                  )}
-                </div>
-                <textarea
-                  value={titlesInput}
-                  onChange={(e) => setTitlesInput(e.target.value)}
-                  placeholder={'PANI PURI\n\nWELCOME DRINK'}
-                  rows={6}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a4a87]/30 focus:border-[#0a4a87] resize-y"
-                />
-                <div className="flex items-start gap-1.5 mt-2 text-xs text-slate-400">
-                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>
-                    This is the bold text shown above the divider line. Separate dishes with a blank line —
-                    a long name will wrap automatically, so you don't need to break it onto a new line yourself.
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-slate-700">Lower Text (Description)</label>
-                  {descriptionsInput && (
-                    <button
-                      type="button"
-                      onClick={() => setDescriptionsInput('')}
-                      className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3 h-3" /> Clear
-                    </button>
-                  )}
-                </div>
-                <textarea
-                  value={descriptionsInput}
-                  onChange={(e) => setDescriptionsInput(e.target.value)}
-                  placeholder={'In Bombay style with silbatta pani ragda\n\nThai basil twist chilly guava masala cold drink'}
-                  rows={6}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0a4a87]/30 focus:border-[#0a4a87] resize-y"
-                />
-                <div className="flex items-start gap-1.5 mt-2 text-xs text-slate-400">
-                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>
-                    Optional, shown below the divider line. Matches dish names by order — the 1st block goes
-                    with the 1st dish name, and so on. A description can span multiple lines; separate dishes
-                    with a blank line. Leave empty for a dish with no description.
-                  </span>
-                </div>
+                ))}
               </div>
             </div>
-          </section>
+
+            <SmartPasteBox onDishesDetected={addDetectedDishes} />
+
+            <div ref={dishListRef}>
+              <DishList
+                dishes={dishes}
+                defaultSize={defaultSize}
+                customSize={customSize}
+                focusDishId={focusDishId}
+                onChange={updateDish}
+                onRemove={removeDish}
+                onAdd={addBlankDish}
+                onClear={clearDishes}
+              />
+            </div>
+          </div>
+        </section>
 
         {/* Section 2: Live Preview — fills the full height of its column so the tag is as
             large and visible as possible; only scrolls internally if there are many tags. */}
@@ -320,21 +265,21 @@ export function TagCreatorPage() {
             2. Live Preview
           </h2>
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 flex-1 min-h-[400px] lg:min-h-0 flex flex-col overflow-hidden">
-            {size && dishes.length > 0 && (
+            {readyDishes.length > 0 && (
               <div className="flex items-center justify-between mb-4 text-xs text-slate-500 shrink-0">
-                <span className="font-medium text-slate-600">
-                  {TAG_SIZES.find((s) => s.id === sizeId)?.label || 'Custom Tag'}
+                <span className="font-medium text-slate-600">{sizeSummary.title}</span>
+                <span>
+                  {sizeSummary.detail} &middot; {readyDishes.length} tag{readyDishes.length === 1 ? '' : 's'}
                 </span>
-                <span>{size.sublabel} &middot; {dishes.length} tag{dishes.length === 1 ? '' : 's'}</span>
               </div>
             )}
 
-            {dishes.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 py-20">
-                Enter dish names to see a live preview.
+            {printable.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-400 py-20 px-6">
+                Paste your menu and click &ldquo;Analyze with AI&rdquo;, or add a dish manually, to see a live preview.
               </div>
-            ) : !size ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 py-20">
+            ) : hasInvalidSize ? (
+              <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-400 py-20 px-6">
                 Enter a valid custom width and height to see a preview.
               </div>
             ) : isPreviewLoading && previewPages.length === 0 ? (
@@ -343,9 +288,19 @@ export function TagCreatorPage() {
                 Rendering preview...
               </div>
             ) : (
-              <div className={`flex-1 min-h-0 flex flex-wrap gap-6 items-center justify-center overflow-auto ${isPreviewLoading ? 'opacity-60' : ''}`}>
-                {previewPages.map((src, idx) => (
-                  <TagPreview key={idx} src={src} widthPx={previewWidthPx} heightPx={previewHeightPx} />
+              <div
+                className={`flex-1 min-h-0 flex flex-wrap gap-6 items-center justify-center overflow-auto ${
+                  isPreviewLoading ? 'opacity-60' : ''
+                }`}
+              >
+                {previewPages.map((page, idx) => (
+                  <TagPreview
+                    key={idx}
+                    src={page.src}
+                    widthMm={page.widthMm}
+                    heightMm={page.heightMm}
+                    label={page.label}
+                  />
                 ))}
               </div>
             )}

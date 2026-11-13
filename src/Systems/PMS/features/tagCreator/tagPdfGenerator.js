@@ -137,12 +137,20 @@ function drawTag(doc, { title, description }, { widthMm, heightMm }, logo, fontS
   }
 }
 
+const orientationFor = ({ widthMm, heightMm }) => (widthMm >= heightMm ? 'landscape' : 'portrait');
+
 /**
- * Builds a multi-page, print-ready PDF — one page per dish, each sized to
- * the exact physical dimensions of the selected tag size.
+ * Builds one multi-page, print-ready PDF — one page per dish. Every dish
+ * carries its own `size` ({ widthMm, heightMm }), so a single PDF can mix tag
+ * sizes; each page is cut to the exact physical dimensions of its own tag.
+ *
+ * @param {{ dishes: Array<{ title: string, description?: string, size: { widthMm: number, heightMm: number } }>, fontStyleId?: string }} opts
  */
-export async function generateTagsPdf({ dishes, size, fontStyleId }) {
-  const { widthMm, heightMm } = size;
+export async function generateTagsPdf({ dishes, fontStyleId }) {
+  if (!dishes || dishes.length === 0) {
+    throw new Error('At least one dish is required to generate tags.');
+  }
+
   const fontStyle = getFontStyle(fontStyleId);
 
   let logo = null;
@@ -152,18 +160,21 @@ export async function generateTagsPdf({ dishes, size, fontStyleId }) {
     console.warn('Tag logo failed to load; generating tags without it.', err);
   }
 
+  // jsPDF needs an initial page format; the first dish's size is used for it.
+  const first = dishes[0].size;
   const doc = new jsPDF({
-    orientation: widthMm >= heightMm ? 'landscape' : 'portrait',
+    orientation: orientationFor(first),
     unit: 'mm',
-    format: [widthMm, heightMm],
+    format: [first.widthMm, first.heightMm],
     compress: true,
   });
   registerFont(doc, fontStyle.title);
   registerFont(doc, fontStyle.desc);
 
   dishes.forEach((dish, index) => {
+    const { widthMm, heightMm } = dish.size;
     if (index > 0) {
-      doc.addPage([widthMm, heightMm], widthMm >= heightMm ? 'landscape' : 'portrait');
+      doc.addPage([widthMm, heightMm], orientationFor(dish.size));
     }
     drawTag(doc, dish, { widthMm, heightMm }, logo, fontStyle);
   });
@@ -171,8 +182,14 @@ export async function generateTagsPdf({ dishes, size, fontStyleId }) {
   return doc;
 }
 
-export async function downloadTagsPdf({ dishes, size, fontStyleId }) {
-  const doc = await generateTagsPdf({ dishes, size, fontStyleId });
+function pdfFileName(dishes) {
+  const labels = new Set(dishes.map((d) => d.size.label));
+  const sizePart = labels.size === 1 ? [...labels][0].replace(/\s+/g, '') : 'MixedSizes';
   const datePart = new Date().toISOString().slice(0, 10);
-  doc.save(`Tags_${size.label.replace(/\s+/g, '')}_${datePart}.pdf`);
+  return `Tags_${sizePart}_${datePart}.pdf`;
+}
+
+export async function downloadTagsPdf({ dishes, fontStyleId }) {
+  const doc = await generateTagsPdf({ dishes, fontStyleId });
+  doc.save(pdfFileName(dishes));
 }
