@@ -149,7 +149,7 @@ export const PETE_PAGES = [
   { id: 'master', name: 'Master Data', route: '/pete/master', desc: 'Manage persons, modes, group heads & vendors' },
 ]
 
-// Page Definitions for PMS module (24 total: 5 core, 17 departments, 2 master & logs)
+// Page Definitions for PMS module (25 total: 5 core, 18 departments, 2 master & logs)
 export const PMS_PAGES = [
   // Core / Management
   { id: 'dashboard', name: 'H3MS Dashboard', route: '/pms/dashboard', desc: 'Active bookings pipeline & real-time delay tracking' },
@@ -161,6 +161,7 @@ export const PMS_PAGES = [
   // 17 Departments
   { id: 'chef', name: 'Kitchen Preparation', route: '/pms/kitchen-preparation', desc: 'Kitchen prep and chef task coordination' },
   { id: 'tagPrints', name: 'Tag Print', route: '/pms/tag-print', desc: 'Buffet & item display tag generation' },
+  { id: 'tagCreator', name: 'Tag Creator', route: '/pms/tag-creator', desc: 'Generate print-ready dish tags in fixed sizes' },
   { id: 'dress', name: 'Dress Requirements', route: '/pms/dress', desc: 'Staff uniforms, theme and dress codes' },
   { id: 'decor', name: 'Decor List', route: '/pms/decor-list', desc: 'Setup, props, theme styling and decor checklist' },
   { id: 'crockery', name: 'Crockery List', route: '/pms/crockery-list', desc: 'Crockery items requirement for catering' },

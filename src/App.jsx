@@ -25,6 +25,7 @@ import { PmsMenuChatbotPage } from './Systems/PMS/pages/PmsMenuChatbotPage'
 import { PmsWhatsappPage } from './Systems/PMS/pages/PmsWhatsappPage'
 import { PmsKitchenPrepPage } from './Systems/PMS/pages/PmsKitchenPrepPage'
 import { PmsTagPrintPage } from './Systems/PMS/pages/PmsTagPrintPage'
+import { PmsTagCreatorPage } from './Systems/PMS/pages/PmsTagCreatorPage'
 import { PmsDressPage } from './Systems/PMS/pages/PmsDressPage'
 import { PmsDecorPage } from './Systems/PMS/pages/PmsDecorPage'
 import { PmsCrockeryListPage } from './Systems/PMS/pages/PmsCrockeryListPage'
@@ -202,6 +203,14 @@ export function App() {
               }
             />
             <Route path="/pms/tag-prints" element={<Navigate to="/pms/tag-print" replace />} />
+            <Route
+              path="/pms/tag-creator"
+              element={
+                <ProtectedRoute system="pms" page="tagCreator">
+                  <PmsTagCreatorPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/pms/dress"
               element={

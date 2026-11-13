@@ -113,7 +113,8 @@ export function MasterLayout() {
 
   const isFullHeightPage =
     location.pathname.startsWith('/pms/whatsapp') ||
-    location.pathname.startsWith('/pms/menu-chatbot')
+    location.pathname.startsWith('/pms/menu-chatbot') ||
+    location.pathname.startsWith('/pms/tag-creator')
 
   return (
     // h-app (index.css): visible screen height; on phones 100vh includes the area behind the address bar

@@ -15,6 +15,7 @@ import {
   MessageSquare,
   ChefHat,
   Tag,
+  Tags,
   Shirt,
   Wheat,
   Apple,
@@ -97,10 +98,11 @@ export function Sidebar({ mobileOpen, setMobileOpen }) {
 
   const pmsNavItems = [
     { name: 'H3MS Dashboard', path: '/pms/dashboard', icon: LayoutDashboard, show: canAccessPage('pms', 'dashboard'), key: 'dashboard' },
-    { name: 'Booking Master', path: '/pms/bookings', icon: CalendarDays, show: canAccessPage('pms', 'bookings'), key: 'bookings' },
-    { name: 'Menu Finalize', path: '/pms/menu-finalize', icon: ClipboardList, show: canAccessPage('pms', 'menuFinalize'), key: 'menuFinalize' },
     { name: 'Menu AI Chatbot', path: '/pms/menu-chatbot', icon: Sparkles, show: canAccessPage('pms', 'menuChatbot'), key: 'menuChatbot' },
     { name: 'WhatsApp Hub', path: '/pms/whatsapp', icon: MessageSquare, show: canAccessPage('pms', 'whatsapp'), key: 'whatsapp' },
+    { name: 'Tag Creator', path: '/pms/tag-creator', icon: Tags, show: canAccessPage('pms', 'tagCreator'), key: 'tagCreator' },
+    { name: 'Booking Master', path: '/pms/bookings', icon: CalendarDays, show: canAccessPage('pms', 'bookings'), key: 'bookings' },
+    { name: 'Menu Finalize', path: '/pms/menu-finalize', icon: ClipboardList, show: canAccessPage('pms', 'menuFinalize'), key: 'menuFinalize' },
     { name: 'Kitchen Prep', path: '/pms/kitchen-preparation', icon: ChefHat, show: canAccessPage('pms', 'chef'), key: 'chef' },
     { name: 'Tag Print', path: '/pms/tag-print', icon: Tag, show: canAccessPage('pms', 'tagPrints'), key: 'tagPrints' },
     { name: 'Dress', path: '/pms/dress', icon: Shirt, show: canAccessPage('pms', 'dress'), key: 'dress' },
